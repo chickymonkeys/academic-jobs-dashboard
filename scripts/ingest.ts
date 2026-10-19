@@ -4,6 +4,7 @@
  *   pnpm ingest                       fetch all sources live (falls back to cached raw payloads)
  *   pnpm ingest --offline             re-parse cached raw payloads only
  *   pnpm ingest --geocode-budget=50   cap Nominatim calls this run
+ *   pnpm ingest --enable=euraxess     also read a source that is off by default (see SourceAdapter.off)
  *
  * Output (consumed by the app, servable from any static host/CDN):
  *   public/data/meta.json             small, polled by clients to detect new snapshots
@@ -22,6 +23,7 @@ import { academicTransferAdapter } from "./sources/academictransfer"
 import { ajoAdapter } from "./sources/ajo"
 import { appamAdapter } from "./sources/appam"
 import { ejmAdapter } from "./sources/ejm"
+import { euraxessAdapter } from "./sources/euraxess"
 import { hejAdapter } from "./sources/hej"
 import { jobsAcUkAdapter } from "./sources/jobsacuk"
 import { joeAdapter } from "./sources/joe"
@@ -42,12 +44,14 @@ const ADAPTERS: SourceAdapter[] = [
   appamAdapter,
   ajoAdapter,
   academicTransferAdapter,
+  euraxessAdapter,
   hejAdapter,
 ]
 
 const argv = process.argv.slice(2)
 const OFFLINE = argv.includes("--offline")
 const BUDGET = Number(argv.find((a) => a.startsWith("--geocode-budget="))?.split("=")[1] ?? 1500)
+const ENABLED = new Set(argv.find((a) => a.startsWith("--enable="))?.split("=")[1]?.split(",") ?? [])
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const DATA = path.join(ROOT, "data")
@@ -146,7 +150,14 @@ async function main() {
   const today = new Date().toISOString().slice(0, 10)
 
   const results = []
-  for (const adapter of ADAPTERS) results.push(await collect(adapter))
+  for (const adapter of ADAPTERS) {
+    // An off source is left out entirely, cached payload included, so the snapshot never carries its listings
+    if (adapter.off && !ENABLED.has(adapter.id)) {
+      console.log(`· ${adapter.id}: off (${adapter.off}); --enable=${adapter.id} reads it`)
+      continue
+    }
+    results.push(await collect(adapter))
+  }
   const drafts = results.flatMap((r) => r.drafts)
   for (const d of drafts) d.disciplines = disciplinesFor(d.disciplines, d)
 

@@ -10,6 +10,7 @@ const SOURCE_LABEL: Record<SourceId, { tag: string; name: string }> = {
   appam: { tag: "APPAM", name: "APPAM Career Connections" },
   ajo: { tag: "AJO", name: "Academic Jobs Online (AJO)" },
   academictransfer: { tag: "AcademicTransfer", name: "AcademicTransfer" },
+  euraxess: { tag: "EURAXESS", name: "EURAXESS" },
   hej: { tag: "HEJ", name: "HigherEdJobs (HEJ)" },
 }
 export const sourceLabel = (s: SourceId) => SOURCE_LABEL[s].tag

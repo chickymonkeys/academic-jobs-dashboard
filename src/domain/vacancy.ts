@@ -14,6 +14,7 @@ export const SOURCE_IDS = [
   "appam",
   "ajo",
   "academictransfer",
+  "euraxess",
   "hej",
 ] as const
 export const SourceIdSchema = z.enum(SOURCE_IDS)

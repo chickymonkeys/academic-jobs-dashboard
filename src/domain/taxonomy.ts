@@ -148,6 +148,40 @@ export function fieldsFromEjm(categories: string[]): string[] {
   return out.length ? uniq(out) : ["any"]
 }
 
+/** EURAXESS research fields under "Economics"; subfields not listed (e.g. "Applied economics") carry no field signal */
+const EURAXESS_FIELD_TO_JEL: Record<string, string[]> = {
+  "administrative sciences": ["H"],
+  "agricultural economics": ["Q"],
+  banking: ["G"],
+  "business economics": ["M"],
+  "consumer economics": ["D"],
+  econometrics: ["C"],
+  "economic systems": ["P"],
+  "economic theory": ["D"],
+  "economics of development": ["O"],
+  "economics other": ["Z"],
+  "environmental economics": ["Q"],
+  "financial science": ["G"],
+  "food economics": ["Q"],
+  "health economics": ["I"],
+  "industrial economics": ["L"],
+  "international economics": ["F"],
+  "labour economics": ["J"],
+  macroeconomics: ["E"],
+  "management studies": ["M"],
+  marketing: ["M"],
+  microeconomics: ["D"],
+  "political economy": ["P"],
+  "production economics": ["D"],
+  "social economics": ["I"],
+  "tourism studies": ["Z"],
+  "transport economics": ["R"],
+}
+
+export function fieldsFromEuraxess(fields: string[]): string[] {
+  return uniq(fields.flatMap((f) => EURAXESS_FIELD_TO_JEL[f.trim().toLowerCase()] ?? []))
+}
+
 export function fieldsFromJel(codes: string[]): string[] {
   const out = codes.map((code) => {
     const c = code.trim().toUpperCase()

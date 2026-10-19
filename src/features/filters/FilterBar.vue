@@ -2,7 +2,7 @@
 import { computed } from "vue"
 import { CATEGORIES, DISCIPLINES, FIELDS } from "@/domain/taxonomy"
 import { list, toggleIn, type AppSearch, type SetSearch } from "@/app/search"
-import { SOURCE_IDS } from "@/domain/vacancy"
+import { SOURCE_IDS, type SourceId } from "@/domain/vacancy"
 import { sourceLabel, sourceName } from "@/components/job/labels"
 import { useMode } from "@/lib/theme"
 import Chip from "./Chip.vue"
@@ -16,6 +16,8 @@ const props = defineProps<{
   facets: ReturnType<typeof facetCounts>
   savedCount: number
   freshCount: number
+  /** Sources the snapshot was built from; one the ingest leaves off has nothing to filter, unless it's selected */
+  sourceIds?: readonly SourceId[]
 }>()
 
 const mode = useMode()
@@ -42,7 +44,12 @@ const fieldOptions = computed<FacetOption[]>(() =>
   FIELDS.map((f) => ({ id: f.id, label: f.label, count: props.facets.fields[f.id] ?? 0 })).sort((a, b) => b.count - a.count),
 )
 const sourceOptions = computed<FacetOption[]>(() =>
-  SOURCE_IDS.map((s) => ({ id: s, label: sourceName(s), count: props.facets.sources[s] ?? 0, tag: sourceLabel(s) })),
+  SOURCE_IDS.filter((s) => !props.sourceIds || props.sourceIds.includes(s) || sources.value.includes(s)).map((s) => ({
+    id: s,
+    label: sourceName(s),
+    count: props.facets.sources[s] ?? 0,
+    tag: sourceLabel(s),
+  })),
 )
 
 const clearAll = () =>

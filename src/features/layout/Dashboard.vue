@@ -87,6 +87,7 @@ const index = computed(() => buildIndex(items.value))
 const filters = computed(() => filtersFrom(JSON.parse(filterKey.value)))
 const matched = computed(() => applyFilters(index.value, filters.value, saved.value))
 const facets = computed(() => facetCounts(index.value, filters.value, saved.value))
+const snapshotSources = computed(() => meta.value?.sources.map((s) => s.id))
 const mapPoints = computed(() => matched.value.map((x) => x.v))
 const regionCounts = computed(() => {
   const c: Partial<Record<RegionId, number>> = {}
@@ -276,6 +277,7 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
             :search="search"
             :set="set"
             :facets="facets"
+            :source-ids="snapshotSources"
             :saved-count="saved.size"
             :fresh-count="freshCount"
             class="flex-wrap"
@@ -384,6 +386,7 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
             :search="search"
             :set="set"
             :facets="facets"
+            :source-ids="snapshotSources"
             :saved-count="saved.size"
             :fresh-count="freshCount"
             class="px-0.5 [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)]"

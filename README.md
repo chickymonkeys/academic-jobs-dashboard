@@ -19,7 +19,7 @@ pnpm build && pnpm preview   # production build (vite build, then vue-tsc)
 pnpm run deploy:cloudflare   # build and deploy to your Cloudflare account
 ```
 
-`pnpm ingest --offline` re-parses cached payloads in `data/raw/`; `--geocode-budget=N` caps Nominatim calls per run.
+`pnpm ingest --offline` re-parses cached payloads in `data/raw/`; `--geocode-budget=N` caps Nominatim calls per run; `--enable=euraxess` also reads a source that is off by default (below).
 
 ## Sources
 
@@ -41,7 +41,7 @@ Everything is fetched politely: one request at a time per portal, spaced out (2â
 
 **Left out, and why.**
 
-- **EURAXESS**: its `robots.txt` disallows `/jobs/`, both search and job pages. Most of its economics listings are reposts from THE, the MUR portal, JREC-IN and Academic Positions, so the first two are read at the source instead. Postings made directly on EURAXESS (about a third of its economics listings, mostly European universities) are covered only when they also appear on another source.
+- **EURAXESS** (adapter included, off by default): its `robots.txt` disallows `/jobs/`, both search and job pages. Most of its economics listings are reposts from THE, the MUR portal, JREC-IN and Academic Positions, so the first two are read at the source instead. Postings made directly on EURAXESS (about a third of its economics listings, mostly European universities) are covered only when they also appear on another source. The adapter (`scripts/sources/euraxess.ts`, research fields Economics and Political sciences, one search page every 5 s) is marked `off`, so the ingest and CI skip it, cached payload included; `pnpm ingest --enable=euraxess` runs it, for use only with EURAXESS's leave or once its `robots.txt` allows it.
 - **JREC-IN Portal** (Japan): its terms forbid redistributing its postings without JST's prior approval.
 - **Academic Positions** and **PublicServiceCareers** (NASPAA): every page, sitemap included, sits behind a Cloudflare bot challenge.
 - **APSA eJobs** and the **ISA job board**: members only; non-members see titles at most.
@@ -102,7 +102,7 @@ UI is Nuxt UI in plain Vue mode (`@nuxt/ui/vite`): components (`UButton`, `UPopo
 - `vacancies.json`: the lean index used by the map and list (around 1.1 MB raw for about 1,300 positions).
 - `details/<id>.json`: full bodies, fetched only when a listing is opened.
 
-**Adding a source** (e.g. university feeds): implement `SourceAdapter`, map it onto `Vacancy` (including the `disciplines` its feed or category implies), add its id to `SOURCE_IDS` and its labels to `src/components/job/labels.ts`, then register it in `scripts/ingest.ts`. Order sets dedupe priority, so sources with full descriptions come first. `fetchRaw(previous)` receives the last cached payload, so per-job pages fetched before can be reused; `refreshHours` spaces out live fetches for portals that ask for it. Category, discipline and field normalization live in `src/domain/taxonomy.ts` (JEL letters as the shared field vocabulary; `fieldsFromText` infers them from titles where a source has no field codes; `disciplinesFor` adds the disciplines a title or department names).
+**Adding a source** (e.g. university feeds): implement `SourceAdapter`, map it onto `Vacancy` (including the `disciplines` its feed or category implies), add its id to `SOURCE_IDS` and its labels to `src/components/job/labels.ts`, then register it in `scripts/ingest.ts`. Order sets dedupe priority, so sources with full descriptions come first. `fetchRaw(previous)` receives the last cached payload, so per-job pages fetched before can be reused; `refreshHours` spaces out live fetches for portals that ask for it; `off` keeps a source out of every run unless `--enable=<id>` names it. Category, discipline and field normalization live in `src/domain/taxonomy.ts` (JEL letters as the shared field vocabulary; `fieldsFromText` infers them from titles where a source has no field codes; `disciplinesFor` adds the disciplines a title or department names).
 
 **Continuous updates:** `.github/workflows/deploy.yml` runs the pipeline on every push to `main` and every 3 hours, then deploys. The snapshot is never committed: it holds third-party listings, many with named contacts, so it lives only in the deployed site. Raw feed payloads stay in the Actions cache, so a feed that is down falls back to its last good copy. `data/geocache.json` and `data/seen.json` are committed state: the geocode cache keeps reruns fast and polite to Nominatim, and first-seen dates give JOE (which publishes no post date) a "new" signal.
 
