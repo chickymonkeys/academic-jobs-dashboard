@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from "vue"
-import { CATEGORIES, FIELDS } from "@/domain/taxonomy"
+import { CATEGORIES, DISCIPLINES, FIELDS } from "@/domain/taxonomy"
 import { list, toggleIn, type AppSearch, type SetSearch } from "@/app/search"
-import { sourceLabel } from "@/components/job/labels"
+import { SOURCE_IDS, type SourceId } from "@/domain/vacancy"
+import { sourceLabel, sourceName } from "@/components/job/labels"
 import { useMode } from "@/lib/theme"
 import Chip from "./Chip.vue"
 import DeadlineChip from "./DeadlineChip.vue"
@@ -15,15 +16,18 @@ const props = defineProps<{
   facets: ReturnType<typeof facetCounts>
   savedCount: number
   freshCount: number
+  /** Sources the snapshot was built from; one the ingest leaves off has nothing to filter, unless it's selected */
+  sourceIds?: readonly SourceId[]
 }>()
 
 const mode = useMode()
 const cats = computed(() => list(props.search.cat))
+const discs = computed(() => list(props.search.disc))
 const fields = computed(() => list(props.search.field))
 const sources = computed(() => list(props.search.src))
 const anyActive = computed(
   () =>
-    cats.value.length + fields.value.length + sources.value.length > 0 ||
+    cats.value.length + discs.value.length + fields.value.length + sources.value.length > 0 ||
     !!props.search.dl ||
     !!props.search.closed ||
     !!props.search.saved ||
@@ -33,24 +37,43 @@ const anyActive = computed(
 const catOptions = computed<FacetOption[]>(() =>
   CATEGORIES.map((c) => ({ id: c.id, label: c.label, count: props.facets.cats[c.id] ?? 0, color: c.color[mode.value] })),
 )
+const discOptions = computed<FacetOption[]>(() =>
+  DISCIPLINES.map((d) => ({ id: d.id, label: d.label, count: props.facets.discs[d.id] ?? 0 })),
+)
 const fieldOptions = computed<FacetOption[]>(() =>
   FIELDS.map((f) => ({ id: f.id, label: f.label, count: props.facets.fields[f.id] ?? 0 })).sort((a, b) => b.count - a.count),
 )
 const sourceOptions = computed<FacetOption[]>(() =>
-  (["ejm", "joe"] as const).map((s) => ({
+  SOURCE_IDS.filter((s) => !props.sourceIds || props.sourceIds.includes(s) || sources.value.includes(s)).map((s) => ({
     id: s,
-    label: s === "ejm" ? "EconJobMarket (EJM)" : "AEA JOE",
+    label: sourceName(s),
     count: props.facets.sources[s] ?? 0,
     tag: sourceLabel(s),
   })),
 )
 
 const clearAll = () =>
-  props.set({ cat: undefined, field: undefined, src: undefined, dl: undefined, closed: undefined, saved: undefined, fresh: undefined })
+  props.set({
+    cat: undefined,
+    disc: undefined,
+    field: undefined,
+    src: undefined,
+    dl: undefined,
+    closed: undefined,
+    saved: undefined,
+    fresh: undefined,
+  })
 </script>
 
 <template>
   <div class="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+    <FacetChip
+      label="Discipline"
+      :options="discOptions"
+      :selected="discs"
+      @toggle="(id) => set((p) => ({ disc: toggleIn(p.disc, id) }))"
+      @clear="set({ disc: undefined })"
+    />
     <FacetChip
       label="Position"
       :options="catOptions"

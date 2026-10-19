@@ -17,6 +17,7 @@ export const searchSchema = z.object({
   q: str,
   /** comma-separated lists keep URLs readable */
   cat: str,
+  disc: str,
   field: str,
   src: str,
   region: str,

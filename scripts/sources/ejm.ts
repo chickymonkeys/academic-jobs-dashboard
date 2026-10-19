@@ -88,6 +88,7 @@ export const ejmAdapter: SourceAdapter = {
         institution: clean(ad.name ?? "Unknown institution"),
         department: ad.department ? clean(ad.department) : null,
         category: classifyCategory({ title, types }),
+        disciplines: ["econ"],
         positionTypes: types,
         fields: fieldsFromEjm(categories),
         city: tidyPlace(loc?.city),

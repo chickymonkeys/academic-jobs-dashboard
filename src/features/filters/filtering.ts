@@ -1,5 +1,5 @@
 import { boundsContain, type Bounds } from "@/domain/geo"
-import { CATEGORY_BY_ID, FIELD_LABEL } from "@/domain/taxonomy"
+import { CATEGORY_BY_ID, DISCIPLINE_LABEL, FIELD_LABEL } from "@/domain/taxonomy"
 import type { Vacancy } from "@/domain/vacancy"
 import { daysUntil, isFresh } from "@/lib/dates"
 import { list, type AppSearch } from "@/app/search"
@@ -7,6 +7,7 @@ import { list, type AppSearch } from "@/app/search"
 export type Filters = {
   terms: string[]
   cats: string[]
+  discs: string[]
   fields: string[]
   sources: string[]
   region: string | null
@@ -20,6 +21,7 @@ export function filtersFrom(search: AppSearch): Filters {
   return {
     terms: tokenize(search.q ?? ""),
     cats: list(search.cat),
+    discs: list(search.disc),
     fields: list(search.field),
     sources: list(search.src),
     region: search.region ?? null,
@@ -53,7 +55,12 @@ export function buildIndex(items: Vacancy[]): Indexed[] {
     const title = normalize(v.title)
     const inst = normalize(`${v.institution} ${v.department ?? ""}`)
     const extra = normalize(
-      [...v.fields.map((f) => FIELD_LABEL[f] ?? f), CATEGORY_BY_ID[v.category].label, ...v.positionTypes].join(" "),
+      [
+        ...v.disciplines.map((d) => DISCIPLINE_LABEL[d]),
+        ...v.fields.map((f) => FIELD_LABEL[f] ?? f),
+        CATEGORY_BY_ID[v.category].label,
+        ...v.positionTypes,
+      ].join(" "),
     )
     return { v, title, inst, place, hay: `${title} ${inst} ${place} ${extra}` }
   })
@@ -71,12 +78,13 @@ export function score(x: Indexed, terms: string[]) {
   return s
 }
 
-type FacetKey = "cats" | "fields" | "sources"
+type FacetKey = "cats" | "discs" | "fields" | "sources"
 
 function passes(x: Indexed, f: Filters, saved: ReadonlySet<string>, skip?: FacetKey, now = new Date()) {
   const v = x.v
   if (f.terms.length && score(x, f.terms) === 0) return false
   if (skip !== "cats" && f.cats.length && !f.cats.includes(v.category)) return false
+  if (skip !== "discs" && f.discs.length && !v.disciplines.some((d) => f.discs.includes(d))) return false
   if (skip !== "fields" && f.fields.length && !v.fields.some((fl) => f.fields.includes(fl))) return false
   if (skip !== "sources" && f.sources.length && ![v.source, ...v.alsoOn.map((a) => a.source)].some((s) => f.sources.includes(s)))
     return false
@@ -108,6 +116,7 @@ export function facetCounts(index: Indexed[], f: Filters, saved: ReadonlySet<str
   }
   return {
     cats: count("cats", (v) => [v.category]),
+    discs: count("discs", (v) => v.disciplines),
     fields: count("fields", (v) => v.fields),
     sources: count("sources", (v) => [v.source, ...v.alsoOn.map((a) => a.source)]),
   }

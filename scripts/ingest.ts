@@ -4,6 +4,7 @@
  *   pnpm ingest                       fetch all sources live (falls back to cached raw payloads)
  *   pnpm ingest --offline             re-parse cached raw payloads only
  *   pnpm ingest --geocode-budget=50   cap Nominatim calls this run
+ *   pnpm ingest --enable=euraxess     also read a source that is off by default (see SourceAdapter.off)
  *
  * Output (consumed by the app, servable from any static host/CDN):
  *   public/data/meta.json             small, polled by clients to detect new snapshots
@@ -14,19 +15,43 @@ import { createHash } from "node:crypto"
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { findCountry, regionForPoint } from "../src/domain/geo"
+import { disciplinesFor } from "../src/domain/taxonomy"
 import { MetaSchema, SnapshotSchema, VacancySchema, type SourceStatus, type Vacancy } from "../src/domain/vacancy"
 import { Geocoder } from "./lib/geocode"
 import { jaccard, normName, titleTokens } from "./lib/text"
+import { academicTransferAdapter } from "./sources/academictransfer"
+import { ajoAdapter } from "./sources/ajo"
+import { appamAdapter } from "./sources/appam"
 import { ejmAdapter } from "./sources/ejm"
+import { euraxessAdapter } from "./sources/euraxess"
+import { hejAdapter } from "./sources/hej"
+import { jobsAcUkAdapter } from "./sources/jobsacuk"
 import { joeAdapter } from "./sources/joe"
+import { murAdapter } from "./sources/mur"
+import { theJobsAdapter } from "./sources/thejobs"
 import type { Draft, SourceAdapter } from "./sources/types"
 
-/** Registration order is also dedupe priority: earlier sources win the primary record. */
-const ADAPTERS: SourceAdapter[] = [ejmAdapter, joeAdapter]
+/**
+ * Registration order is also dedupe priority: earlier sources win the primary record, so the richest
+ * listings come first (structured fields and full bodies) and HigherEdJobs (titles only) comes last.
+ */
+const ADAPTERS: SourceAdapter[] = [
+  ejmAdapter,
+  joeAdapter,
+  jobsAcUkAdapter,
+  theJobsAdapter,
+  murAdapter,
+  appamAdapter,
+  ajoAdapter,
+  academicTransferAdapter,
+  euraxessAdapter,
+  hejAdapter,
+]
 
 const argv = process.argv.slice(2)
 const OFFLINE = argv.includes("--offline")
 const BUDGET = Number(argv.find((a) => a.startsWith("--geocode-budget="))?.split("=")[1] ?? 1500)
+const ENABLED = new Set(argv.find((a) => a.startsWith("--enable="))?.split("=")[1]?.split(",") ?? [])
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const DATA = path.join(ROOT, "data")
@@ -52,10 +77,19 @@ async function collect(adapter: SourceAdapter): Promise<{ drafts: Draft[]; statu
     fetchedAt: null,
     error: null,
   }
+  let cached: { raw: string; mtime: Date } | null = null
+  try {
+    cached = { raw: await readFile(rawFile, "utf8"), mtime: (await stat(rawFile)).mtime }
+  } catch {
+    /* first run for this source */
+  }
+  const ageHours = cached ? (Date.now() - cached.mtime.getTime()) / 3_600_000 : Infinity
   let raw: string | null = null
-  if (!OFFLINE) {
+  if (!OFFLINE && ageHours < (adapter.refreshHours ?? 0)) {
+    console.log(`· ${adapter.id}: cached payload is ${ageHours.toFixed(1)} h old, refreshes every ${adapter.refreshHours} h`)
+  } else if (!OFFLINE) {
     try {
-      raw = await adapter.fetchRaw()
+      raw = await adapter.fetchRaw(cached?.raw ?? null)
       status.fetchedAt = new Date().toISOString()
       await writeFile(rawFile, raw)
     } catch (e) {
@@ -64,12 +98,9 @@ async function collect(adapter: SourceAdapter): Promise<{ drafts: Draft[]; statu
     }
   }
   if (raw == null) {
-    try {
-      raw = await readFile(rawFile, "utf8")
-      status.fetchedAt = (await stat(rawFile)).mtime.toISOString()
-    } catch {
-      return { drafts: [], status: { ...status, error: status.error ?? "no cached payload" } }
-    }
+    if (!cached) return { drafts: [], status: { ...status, error: status.error ?? "no cached payload" } }
+    raw = cached.raw
+    status.fetchedAt = cached.mtime.toISOString()
   }
   try {
     const drafts = adapter.parse(raw)
@@ -84,7 +115,7 @@ function daysBetween(a: string, b: string) {
   return Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000
 }
 
-/** Cross-source dedupe: same institution + (near-identical title, or similar title and same deadline) */
+/** Cross-source dedupe: same institution and discipline + (near-identical title, or similar title and same deadline) */
 function dedupe(drafts: Draft[]): Draft[] {
   const byInstitution = new Map<string, Draft[]>()
   const out: Draft[] = []
@@ -94,6 +125,8 @@ function dedupe(drafts: Draft[]): Draft[] {
     const tokens = titleTokens(d.title)
     const match = peers.find((p) => {
       if (p.source === d.source) return false
+      // Generic titles ("Assistant Professor") at one institution are only the same post within one discipline
+      if (!p.disciplines.some((x) => d.disciplines.includes(x))) return false
       const sim = jaccard(titleTokens(p.title), tokens)
       const sameDeadline = !!p.deadline && !!d.deadline && daysBetween(p.deadline, d.deadline) <= 3
       return sim >= 0.8 || (sim >= 0.4 && sameDeadline)
@@ -102,6 +135,7 @@ function dedupe(drafts: Draft[]): Draft[] {
       match.alsoOn.push({ source: d.source, url: d.url })
       match.fields = [...new Set([...match.fields.filter((f) => f !== "any"), ...d.fields.filter((f) => f !== "any")])]
       if (!match.fields.length) match.fields = ["any"]
+      match.disciplines = disciplinesFor([...match.disciplines, ...d.disciplines], match)
       continue
     }
     peers.push(d)
@@ -116,8 +150,16 @@ async function main() {
   const today = new Date().toISOString().slice(0, 10)
 
   const results = []
-  for (const adapter of ADAPTERS) results.push(await collect(adapter))
+  for (const adapter of ADAPTERS) {
+    // An off source is left out entirely, cached payload included, so the snapshot never carries its listings
+    if (adapter.off && !ENABLED.has(adapter.id)) {
+      console.log(`· ${adapter.id}: off (${adapter.off}); --enable=${adapter.id} reads it`)
+      continue
+    }
+    results.push(await collect(adapter))
+  }
   const drafts = results.flatMap((r) => r.drafts)
+  for (const d of drafts) d.disciplines = disciplinesFor(d.disciplines, d)
 
   const geocoder = await Geocoder.load(path.join(DATA, "geocache.json"), OFFLINE ? 0 : BUDGET)
   geocoder.indexKnown(drafts)

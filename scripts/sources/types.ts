@@ -17,7 +17,12 @@ export interface SourceAdapter {
   name: string
   homepage: string
   rawExt: "json" | "xml"
-  fetchRaw(): Promise<string>
+  /** Minimum hours between live fetches; a younger cached payload is reused instead */
+  refreshHours?: number
+  /** Why the source is not read (its robots.txt or terms, say): the ingest skips it unless run with --enable=<id> */
+  off?: string
+  /** `previous` is the last cached payload, so per-listing pages fetched before need not be fetched again */
+  fetchRaw(previous: string | null): Promise<string>
   parse(raw: string): Draft[]
 }
 

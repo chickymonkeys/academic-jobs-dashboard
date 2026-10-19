@@ -80,13 +80,14 @@ const camera = useCamera(provideMapContext(padding))
 // ── Data pipeline: index → filters → facets → viewport scope → sort ──────────────────────
 // Filters are keyed by the filter fields only, so camera moves (which rewrite `at`) never refilter.
 const filterKey = computed(() => {
-  const { q, cat, field, src, dl, closed, saved, fresh } = search.value
-  return JSON.stringify({ q, cat, field, src, dl, closed, saved, fresh })
+  const { q, cat, disc, field, src, dl, closed, saved, fresh } = search.value
+  return JSON.stringify({ q, cat, disc, field, src, dl, closed, saved, fresh })
 })
 const index = computed(() => buildIndex(items.value))
 const filters = computed(() => filtersFrom(JSON.parse(filterKey.value)))
 const matched = computed(() => applyFilters(index.value, filters.value, saved.value))
 const facets = computed(() => facetCounts(index.value, filters.value, saved.value))
+const snapshotSources = computed(() => meta.value?.sources.map((s) => s.id))
 const mapPoints = computed(() => matched.value.map((x) => x.v))
 const regionCounts = computed(() => {
   const c: Partial<Record<RegionId, number>> = {}
@@ -180,6 +181,7 @@ function onPickInstitution(ids: string[], label: string) {
   group.value = { ids, label }
   camera.fitPoints(resolve(ids), 12)
 }
+const onPickDiscipline = (did: string) => set((p) => ({ disc: toggleIn(p.disc, did), q: undefined }))
 const onPickField = (fid: string) => set((p) => ({ field: toggleIn(p.field, fid), q: undefined }))
 
 // ── Keyboard: / or ⌘K search · j/k or ↑/↓ step through results · Esc back out · f fit ──
@@ -214,10 +216,19 @@ useEventListener(window, "keydown", (e: KeyboardEvent) => {
 const scope = computed(() => (group.value ? "group" : !areaOn.value ? "everywhere" : bounds.value ? "area" : "world"))
 const hasFilters = computed(() => {
   const s = search.value
-  return !!s.q || !!s.cat || !!s.field || !!s.src || !!s.dl || !!s.saved || !!s.fresh
+  return !!s.q || !!s.cat || !!s.disc || !!s.field || !!s.src || !!s.dl || !!s.saved || !!s.fresh
 })
 const clearSearchAndFilters = () =>
-  set({ q: undefined, cat: undefined, field: undefined, src: undefined, dl: undefined, saved: undefined, fresh: undefined })
+  set({
+    q: undefined,
+    cat: undefined,
+    disc: undefined,
+    field: undefined,
+    src: undefined,
+    dl: undefined,
+    saved: undefined,
+    fresh: undefined,
+  })
 const errorMessage = computed(() => (error.value ? String((error.value as Error).message ?? error.value) : ""))
 
 const panelW = computed(() => (view.value === "table" ? TABLE_W : PANEL_W))
@@ -259,12 +270,14 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
             @query="onQuery"
             @pick-place="onPickPlace"
             @pick-institution="onPickInstitution"
+            @pick-discipline="onPickDiscipline"
             @pick-field="onPickField"
           />
           <FilterBar
             :search="search"
             :set="set"
             :facets="facets"
+            :source-ids="snapshotSources"
             :saved-count="saved.size"
             :fresh-count="freshCount"
             class="flex-wrap"
@@ -364,6 +377,7 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
             @query="onQuery"
             @pick-place="onPickPlace"
             @pick-institution="onPickInstitution"
+            @pick-discipline="onPickDiscipline"
             @pick-field="onPickField"
           />
         </div>
@@ -372,6 +386,7 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
             :search="search"
             :set="set"
             :facets="facets"
+            :source-ids="snapshotSources"
             :saved-count="saved.size"
             :fresh-count="freshCount"
             class="px-0.5 [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)]"

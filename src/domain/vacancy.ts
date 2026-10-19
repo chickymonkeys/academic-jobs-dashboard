@@ -5,13 +5,28 @@ import { z } from "zod"
  * Every source adapter maps its raw payload onto this shape; the UI never sees source-specific fields.
  */
 
-export const SOURCE_IDS = ["ejm", "joe"] as const
+export const SOURCE_IDS = [
+  "ejm",
+  "joe",
+  "jobsacuk",
+  "thejobs",
+  "mur",
+  "appam",
+  "ajo",
+  "academictransfer",
+  "euraxess",
+  "hej",
+] as const
 export const SourceIdSchema = z.enum(SOURCE_IDS)
 export type SourceId = z.infer<typeof SourceIdSchema>
 
 export const CATEGORY_IDS = ["faculty", "postdoc", "teaching", "nonacademic", "predoc"] as const
 export const CategorySchema = z.enum(CATEGORY_IDS)
 export type Category = z.infer<typeof CategorySchema>
+
+export const DISCIPLINE_IDS = ["econ", "polsci", "policy"] as const
+export const DisciplineSchema = z.enum(DISCIPLINE_IDS)
+export type Discipline = z.infer<typeof DisciplineSchema>
 
 export const REGION_IDS = [
   "north-america",
@@ -37,6 +52,8 @@ export const VacancySchema = z.object({
   institution: z.string(),
   department: z.string().nullable(),
   category: CategorySchema,
+  /** Economics, political science, public policy: a listing can belong to more than one */
+  disciplines: z.array(DisciplineSchema).min(1),
   positionTypes: z.array(z.string()),
   /** JEL top-level letters, or "any" */
   fields: z.array(z.string()),

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue"
 import type { TableColumn, TableRow } from "@nuxt/ui"
-import { CATEGORY_BY_ID, FIELD_LABEL } from "@/domain/taxonomy"
+import { CATEGORY_BY_ID, DISCIPLINE_LABEL, FIELD_LABEL } from "@/domain/taxonomy"
 import type { Indexed } from "@/features/filters/filtering"
 import CategoryLabel from "@/components/job/CategoryLabel.vue"
 import DeadlineText from "@/components/job/DeadlineText.vue"
@@ -12,7 +12,12 @@ import { placeLabel } from "@/components/job/labels"
 const props = defineProps<{ rows: Indexed[]; selectedId?: string; hoveredId: string | null }>()
 const emit = defineEmits<{ select: [id: string]; hover: [id: string | null] }>()
 
-const fieldLabels = (r: Indexed) => r.v.fields.map((f) => FIELD_LABEL[f] ?? f).join(", ")
+/** Economics goes without saying; other disciplines are named ahead of the JEL fields (and replace "Any field") */
+const fieldLabels = (r: Indexed) => {
+  const discs = r.v.disciplines.filter((d) => d !== "econ").map((d) => DISCIPLINE_LABEL[d])
+  const fields = r.v.fields.filter((f) => !(discs.length && f === "any")).map((f) => FIELD_LABEL[f] ?? f)
+  return [...discs, ...fields].join(", ")
+}
 const width = (w: string) => ({ class: { th: w, td: w } })
 const columns: TableColumn<Indexed>[] = [
   { id: "save", header: "", enableSorting: false, meta: width("w-10") },
@@ -27,7 +32,7 @@ const columns: TableColumn<Indexed>[] = [
     meta: width("w-28"),
   },
   { id: "deadline", header: "Deadline", accessorFn: (r) => r.v.deadline ?? "9999-12-31", meta: width("w-32") },
-  { id: "source", header: "Source", accessorFn: (r) => r.v.source, meta: width("w-24") },
+  { id: "source", header: "Source", accessorFn: (r) => r.v.source, meta: width("w-28") },
 ]
 
 const sorting = ref<Array<{ id: string; desc: boolean }>>([])

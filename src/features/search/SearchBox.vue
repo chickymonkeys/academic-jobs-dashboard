@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, useId, useTemplateRef, watch } from "vue"
-import { FIELDS } from "@/domain/taxonomy"
-import type { Vacancy } from "@/domain/vacancy"
+import { DISCIPLINES, FIELDS } from "@/domain/taxonomy"
+import type { Discipline, Vacancy } from "@/domain/vacancy"
 import { normalize } from "@/features/filters/filtering"
 
 type Agg = { key: string; label: string; sub: string; ids: string[]; norm: string }
@@ -9,6 +9,7 @@ type Option =
   | { kind: "query"; id: string }
   | { kind: "place"; id: string; agg: Agg }
   | { kind: "institution"; id: string; agg: Agg }
+  | { kind: "discipline"; id: string; discId: Discipline; label: string }
   | { kind: "field"; id: string; fieldId: string; label: string }
 
 const props = defineProps<{ value: string; items: Vacancy[] }>()
@@ -16,6 +17,7 @@ const emit = defineEmits<{
   query: [q: string]
   pickPlace: [ids: string[], label: string]
   pickInstitution: [ids: string[], label: string]
+  pickDiscipline: [discId: Discipline]
   pickField: [fieldId: string]
 }>()
 
@@ -72,14 +74,19 @@ const groups = computed(() => {
   const match = (a: Agg) => a.norm.includes(term.value)
   const places = [...sources.value.countries.filter(match).slice(0, 2), ...sources.value.cities.filter(match).slice(0, 4)]
   const institutions = sources.value.institutions.filter(match).slice(0, 5)
+  const discs = DISCIPLINES.filter((d) => normalize(d.label).includes(term.value))
   const fields = FIELDS.filter((f) => normalize(f.label).includes(term.value)).slice(0, 3)
-  if (!places.length && !institutions.length && !fields.length) return []
+  if (!places.length && !institutions.length && !discs.length && !fields.length) return []
   return [
     { heading: `Filter results for “${draft.value.trim()}”`, options: [{ kind: "query", id: "q" } as Option] },
     { heading: "Go to place", options: places.map((agg): Option => ({ kind: "place", id: `p-${agg.key}`, agg })) },
     {
       heading: "Institutions",
       options: institutions.map((agg): Option => ({ kind: "institution", id: `i-${agg.key}`, agg })),
+    },
+    {
+      heading: "Filter by discipline",
+      options: discs.map((d): Option => ({ kind: "discipline", id: `d-${d.id}`, discId: d.id, label: d.label })),
     },
     {
       heading: "Filter by field",
@@ -107,6 +114,9 @@ function choose(o: Option) {
     finish()
   } else if (o.kind === "institution") {
     emit("pickInstitution", o.agg.ids, o.agg.label)
+    finish()
+  } else if (o.kind === "discipline") {
+    emit("pickDiscipline", o.discId)
     finish()
   } else {
     emit("pickField", o.fieldId)
@@ -142,7 +152,7 @@ defineExpose({ focus: () => input.value?.inputRef?.focus() })
 
 <!--
   Typing filters results live; the dropdown offers *navigation* shortcuts —
-  jump to a place, an institution, or a field — so search doubles as geographic navigation.
+  jump to a place or an institution, or filter by discipline or field — so search doubles as geographic navigation.
 -->
 <template>
   <div class="relative">
@@ -225,6 +235,10 @@ defineExpose({ focus: () => input.value?.inputRef?.focus() })
               {{ o.agg.label }} <span class="text-xs text-muted">{{ o.agg.sub }}</span>
             </span>
             <span class="text-xs text-muted tabular-nums">{{ o.agg.ids.length }}</span>
+          </template>
+          <template v-else-if="o.kind === 'discipline'">
+            <UIcon name="i-lucide-graduation-cap" class="size-4 shrink-0 text-muted" />
+            {{ o.label }}
           </template>
           <template v-else>
             <UIcon name="i-lucide-tag" class="size-4 shrink-0 text-muted" />

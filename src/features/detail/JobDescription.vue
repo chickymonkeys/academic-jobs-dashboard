@@ -45,6 +45,9 @@ const blocks = computed(() => {
     <p v-if="data.salary" class="mb-4 rounded-lg bg-elevated px-3 py-2 text-sm">
       <span class="text-muted">Salary · </span>{{ data.salary }}
     </p>
+    <p v-if="!data.blocks.length" class="text-sm text-muted">
+      No description came with this listing. Read it on the original posting.
+    </p>
     <div class="relative">
       <DescriptionBlocks :blocks="blocks" />
       <div

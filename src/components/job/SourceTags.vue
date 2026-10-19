@@ -8,7 +8,7 @@ const sources = computed(() => [...new Set([props.v.source, ...props.v.alsoOn.ma
 </script>
 
 <template>
-  <span class="inline-flex gap-1">
+  <span class="inline-flex flex-wrap gap-1">
     <span
       v-for="s in sources"
       :key="s"

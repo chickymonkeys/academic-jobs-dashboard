@@ -1,4 +1,4 @@
-import type { Category } from "./vacancy"
+import { DISCIPLINE_IDS, type Category, type Discipline } from "./vacancy"
 
 /**
  * Position categories. Colors are the validated categorical palette, slots 1–5 in fixed order
@@ -46,6 +46,40 @@ export const CATEGORY_BY_ID = Object.fromEntries(CATEGORIES.map((c) => [c.id, c]
   Category,
   (typeof CATEGORIES)[number]
 >
+
+/** Disciplines: economics is the core, political science and public policy its neighbours */
+export const DISCIPLINES: ReadonlyArray<{ id: Discipline; label: string }> = [
+  { id: "econ", label: "Economics" },
+  { id: "polsci", label: "Political science" },
+  { id: "policy", label: "Public policy" },
+]
+export const DISCIPLINE_LABEL = Object.fromEntries(DISCIPLINES.map((d) => [d.id, d.label])) as Record<Discipline, string>
+
+const ECON_CUE = /\beconom(ics|ist|y)\b|econometric/
+const POLSCI_CUE =
+  /political science|\bpolitics\b|international (relations|affairs|studies)|comparative politics|political theory|department of government|\bgovernment department/
+const POLICY_CUE =
+  /public (policy|administration|affairs|management)|policy (school|studies|analysis)|school of (public )?policy|school of government/
+
+/**
+ * A source's own discipline (the feed or category a listing came from), widened by what the title and the
+ * hiring unit say: a JOE ad from a Department of Government is political science too, and one from a
+ * policy school is public policy. A unit's name only adds political science when the title doesn't name
+ * economics, so "Professor of Economics" in a Department of Politics and Economics stays economics.
+ */
+export function disciplinesFor(
+  base: Discipline[],
+  listing: { title: string; department: string | null; institution: string },
+): Discipline[] {
+  const title = listing.title.toLowerCase()
+  const unit = `${listing.department ?? ""} ${listing.institution}`.toLowerCase()
+  const out = new Set(base)
+  const econTitle = ECON_CUE.test(title)
+  if (econTitle) out.add("econ")
+  if (POLSCI_CUE.test(title) || (!econTitle && POLSCI_CUE.test(unit))) out.add("polsci")
+  if (POLICY_CUE.test(title) || POLICY_CUE.test(unit)) out.add("policy")
+  return DISCIPLINE_IDS.filter((d) => out.has(d))
+}
 
 /** Field taxonomy: JEL top-level letters with short, scannable labels */
 export const FIELDS: ReadonlyArray<{ id: string; label: string }> = [
@@ -114,6 +148,40 @@ export function fieldsFromEjm(categories: string[]): string[] {
   return out.length ? uniq(out) : ["any"]
 }
 
+/** EURAXESS research fields under "Economics"; subfields not listed (e.g. "Applied economics") carry no field signal */
+const EURAXESS_FIELD_TO_JEL: Record<string, string[]> = {
+  "administrative sciences": ["H"],
+  "agricultural economics": ["Q"],
+  banking: ["G"],
+  "business economics": ["M"],
+  "consumer economics": ["D"],
+  econometrics: ["C"],
+  "economic systems": ["P"],
+  "economic theory": ["D"],
+  "economics of development": ["O"],
+  "economics other": ["Z"],
+  "environmental economics": ["Q"],
+  "financial science": ["G"],
+  "food economics": ["Q"],
+  "health economics": ["I"],
+  "industrial economics": ["L"],
+  "international economics": ["F"],
+  "labour economics": ["J"],
+  macroeconomics: ["E"],
+  "management studies": ["M"],
+  marketing: ["M"],
+  microeconomics: ["D"],
+  "political economy": ["P"],
+  "production economics": ["D"],
+  "social economics": ["I"],
+  "tourism studies": ["Z"],
+  "transport economics": ["R"],
+}
+
+export function fieldsFromEuraxess(fields: string[]): string[] {
+  return uniq(fields.flatMap((f) => EURAXESS_FIELD_TO_JEL[f.trim().toLowerCase()] ?? []))
+}
+
 export function fieldsFromJel(codes: string[]): string[] {
   const out = codes.map((code) => {
     const c = code.trim().toUpperCase()
@@ -124,20 +192,58 @@ export function fieldsFromJel(codes: string[]): string[] {
   return out.length ? uniq(out) : ["any"]
 }
 
-/** Map heterogeneous source signals (title, position types, JOE section) onto one category */
-export function classifyCategory(input: { title: string; types: string[]; section?: string | null }): Category {
+/** Free-text field cues (titles, portal discipline labels), for sources without a field vocabulary of their own */
+const TEXT_TO_JEL: ReadonlyArray<[RegExp, string]> = [
+  [/econometric|statistic|quantitative method|data science|machine learning/, "C"],
+  [/micro-?economic|behaviou?ral econ|experimental econ|game theory|economic theory/, "D"],
+  [/macro-?economic|monetary/, "E"],
+  [/international (economics|trade|finance)|\btrade\b/, "F"],
+  [/financ|banking|asset pricing/, "G"],
+  [/public (economics|finance|policy)|fiscal|taxation/, "H"],
+  [/health econ|education econ|welfare|poverty|inequality/, "I"],
+  [/labou?r|demograph|migration/, "J"],
+  [/law (and|&) economics/, "K"],
+  [/industrial (organi[sz]ation|economics)|competition (policy|economics)|regulation/, "L"],
+  [/business|management|marketing|accounting|entrepreneurship|strategy/, "M"],
+  [/economic history/, "N"],
+  [/development econ|economic development|economics of development|growth/, "O"],
+  [/political economy|economic systems/, "P"],
+  [/agricultur|environment|energy|climate|natural resource|food econ|sustainab/, "Q"],
+  [/urban|regional|rural|real estate|transport|spatial econ|economic geography/, "R"],
+]
+
+export function fieldsFromText(...texts: string[]): string[] {
+  const text = texts.join(" ").toLowerCase()
+  const out = TEXT_TO_JEL.filter(([re]) => re.test(text)).map(([, letter]) => letter)
+  return out.length ? out : ["any"]
+}
+
+/**
+ * Map heterogeneous source signals (title, position types, JOE section) onto one category.
+ * `hint` is a source's own structured signal (e.g. an Italian call type, or THE's job type), trusted once the
+ * title has had its say; so is an `employer` named as a company ("… Group, LLP").
+ */
+export function classifyCategory(input: {
+  title: string
+  types: string[]
+  section?: string | null
+  hint?: Category | null
+  employer?: string
+}): Category {
   const title = input.title.toLowerCase()
   const section = (input.section ?? "").toLowerCase()
   const types = input.types.map((t) => t.toLowerCase())
 
-  if (/\bpre-?doc|predoctoral|research assistant|\bph\.?d\.? (student|candidate|position|scholarship)|doctoral (student|candidate|researcher|position)/.test(title))
+  if (/\bpre-?doc|predoctoral|research assistant|\bph\.?d\.?$|^ph\.?d\s*[:–-]|studentship|\bph\.?d\.? (research )?(student|candidate|researcher|position|scholarship|fellow)|(?<![\w-])doctoral (research )?(student|candidate|researcher|position|fellow)|promovend|promotieplaats/.test(title))
     return "predoc"
   if (/post-?doc|postdoctoral|research fellow|fellowship/.test(title)) return "postdoc"
   if (section.includes("nonacademic")) return "nonacademic"
-  if (/visiting|adjunct|instructor|teaching (professor|fellow|faculty|track|stream)|fixed[- ]term|temporary|clinical|professor of (the )?practice|non-tenure/.test(title))
+  if (/visiting|adjunct|instructor|teaching (professor|fellow|faculty|track|stream)|fixed[- ]term|temporary|clinical|professor of (the )?practice|non-tenure|part-?time|hourly|non-?credit|sessional/.test(title))
     return "teaching"
   if (section.includes("other academic")) return "teaching"
   if (section.includes("full-time academic")) return "faculty"
+  if (input.employer && /\b(LLC|LLP|Inc|Ltd|GmbH|PLC)\b/i.test(input.employer)) return "nonacademic"
+  if (input.hint) return input.hint
 
   if (types.some((t) => !t.startsWith("visiting") && /professor|lecturer/.test(t))) return "faculty"
   if (types.some((t) => t.startsWith("visiting"))) return "teaching"
@@ -145,6 +251,7 @@ export function classifyCategory(input: { title: string; types: string[]; sectio
   if (types.some((t) => /research assistant|doctoral/.test(t))) return "predoc"
   if (types.some((t) => /nonacademic|consultant/.test(t))) return "nonacademic"
   if (types.some((t) => t.includes("other academic"))) return "teaching"
-  if (/economist|analyst|consult|central bank|federal reserve/.test(title)) return "nonacademic"
+  if (/economist|analyst|consult|central bank|federal reserve|quantitative (researcher|trader)|trading|\bintern(ship)?\b/.test(title))
+    return "nonacademic"
   return "faculty"
 }

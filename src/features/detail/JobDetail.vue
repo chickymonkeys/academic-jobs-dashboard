@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useToast } from "@nuxt/ui/composables"
-import { FIELD_LABEL } from "@/domain/taxonomy"
+import { DISCIPLINE_LABEL, FIELD_LABEL } from "@/domain/taxonomy"
 import type { Vacancy } from "@/domain/vacancy"
 import CategoryLabel from "@/components/job/CategoryLabel.vue"
 import DeadlineText from "@/components/job/DeadlineText.vue"
@@ -8,7 +8,7 @@ import InstitutionAvatar from "@/components/job/InstitutionAvatar.vue"
 import NewBadge from "@/components/job/NewBadge.vue"
 import SaveButton from "@/components/job/SaveButton.vue"
 import SourceTags from "@/components/job/SourceTags.vue"
-import { placeLabel, sourceLabel } from "@/components/job/labels"
+import { placeLabel, sourceLabel, sourceList } from "@/components/job/labels"
 import { fmtDate, isFresh } from "@/lib/dates"
 import DetailSection from "./DetailSection.vue"
 import JobDescription from "./JobDescription.vue"
@@ -155,8 +155,15 @@ async function copyLink() {
         </UButton>
       </div>
 
-      <DetailSection title="Fields">
+      <DetailSection title="Discipline & fields">
         <div class="flex flex-wrap gap-1.5">
+          <span
+            v-for="d in v.disciplines"
+            :key="d"
+            class="rounded-full bg-elevated px-2.5 py-0.5 text-xs font-medium text-highlighted"
+          >
+            {{ DISCIPLINE_LABEL[d] }}
+          </span>
           <span v-for="f in v.fields" :key="f" class="rounded-full border border-default px-2.5 py-0.5 text-xs text-toned">
             {{ FIELD_LABEL[f] ?? f }}
           </span>
@@ -187,7 +194,7 @@ async function copyLink() {
       </DetailSection>
 
       <p class="mt-8 text-xs leading-relaxed text-muted">
-        Aggregated from {{ v.alsoOn.length ? "EJM and JOE" : sourceLabel(v.source) }}. Always confirm details and deadlines on
+        Aggregated from {{ sourceList([v.source, ...v.alsoOn.map((a) => a.source)]) }}. Always confirm details and deadlines on
         the original posting.
       </p>
     </div>

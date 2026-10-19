@@ -2,7 +2,7 @@
   "name": "academic-jobs-dashboard",
   "private": true,
   "version": "0.1.0",
-  "description": "Map-first dashboard of academic economics vacancies from EconJobMarket and AEA JOE",
+  "description": "Map-first dashboard of academic vacancies in economics, political science and public policy, from EconJobMarket, AEA JOE, jobs.ac.uk, Times Higher Education, the MUR calls portal, APPAM, Academic Jobs Online, AcademicTransfer and HigherEdJobs",
   "license": "MIT",
   "author": "Alessandro Pizzigolotto",
   "repository": {
