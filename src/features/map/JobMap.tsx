@@ -1,15 +1,14 @@
 import { memo, useCallback, useMemo, useRef, useState } from "react"
-import MapGL, { useControl, type ViewStateChangeEvent } from "react-map-gl/maplibre"
+import MapGL, { Layer, Source, useControl, type ViewStateChangeEvent } from "react-map-gl/maplibre"
 import type { IControl, Map as MaplibreMap } from "maplibre-gl"
 import { MapboxOverlay, type MapboxOverlayProps } from "@deck.gl/mapbox"
 import { ScatterplotLayer, TextLayer } from "@deck.gl/layers"
-import { HeatmapLayer } from "@deck.gl/aggregation-layers"
 import type { PickingInfo } from "@deck.gl/core"
 import Supercluster, { type ClusterFeature, type PointFeature } from "supercluster"
 import { CATEGORIES, CATEGORY_BY_ID } from "@/domain/taxonomy"
 import { WORLD_BOUNDS, type Bounds } from "@/domain/geo"
 import { CATEGORY_IDS, type Category, type Vacancy } from "@/domain/vacancy"
-import { BASEMAP, DENSITY_RAMP, MAP_TOKENS, categoryRgba, type Mode } from "@/lib/colors"
+import { BASEMAP, MAP_TOKENS, categoryRgba, densityPaint, type Mode } from "@/lib/colors"
 import { deadlineLabel } from "@/lib/dates"
 import { DeadlineText } from "@/components/job-atoms"
 import { useCameraPadding, useCamera } from "./camera"
@@ -33,9 +32,15 @@ type Tip = { x: number; y: number } & (
   | { kind: "group"; count: number; breakdown: Counts; names: string[]; where: string; hint: string; approx?: boolean }
 )
 
+// deck.gl shares MapLibre's WebGL context. When the overlay is added twice in quick succession
+// (React's dev double-mount), both attach() calls race and luma.gl throws on the loser unless it may
+// reuse the device already bound to the context; Firefox's timing hits this every load.
+const DEVICE_PROPS = { _reuseDevices: true }
+
 function DeckOverlay(props: MapboxOverlayProps) {
-  const overlay = useControl(() => new MapboxOverlay(props) as unknown as IControl) as unknown as MapboxOverlay
-  overlay.setProps(props)
+  const all = { ...props, deviceProps: DEVICE_PROPS }
+  const overlay = useControl(() => new MapboxOverlay(all) as unknown as IControl) as unknown as MapboxOverlay
+  overlay.setProps(all)
   return null
 }
 
@@ -111,6 +116,26 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
     return { clusters, pins, stacks: pins.filter((s) => s.ids.length > 1) }
   }, [index, sites, zoom])
 
+  const density = useMemo(
+    () =>
+      layer === "density"
+        ? {
+            type: "FeatureCollection" as const,
+            features: points.map((v) => ({
+              type: "Feature" as const,
+              geometry: { type: "Point" as const, coordinates: [v.lng, v.lat] },
+              properties: {},
+            })),
+          }
+        : null,
+    [layer, points],
+  )
+  // Heat sits under the basemap's first label layer, so place names stay legible on top of it
+  const [labelsId, setLabelsId] = useState<string>()
+  const findLabels = useCallback((m: MaplibreMap) => {
+    setLabelsId(m.getLayersOrder().find((id) => m.getLayer(id)?.type === "symbol"))
+  }, [])
+
   const leafIds = useCallback(
     (clusterId: number, limit: number) => index.getLeaves(clusterId, limit).flatMap((l) => sites[l.properties.i].ids),
     [index, sites],
@@ -152,18 +177,9 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
       }),
     ]
 
+    // The density surface itself is a native MapLibre heatmap (below); deck adds points up close
     if (layer === "density") {
       return [
-        new HeatmapLayer<Vacancy>({
-          id: "density",
-          data: points,
-          getPosition: (v) => [v.lng, v.lat],
-          getWeight: 1,
-          radiusPixels: 42,
-          intensity: 1.1,
-          threshold: 0.04,
-          colorRange: DENSITY_RAMP,
-        }),
         new ScatterplotLayer<Vacancy>({
           id: "points",
           data: zoom >= 5 ? points : [],
@@ -374,9 +390,18 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
         attributionControl={{ compact: true }}
         onMove={handleMove}
         onMoveEnd={(e) => emitView(e.target, "originalEvent" in e && !!e.originalEvent)}
-        onLoad={(e) => emitView(e.target, false)}
+        onLoad={(e) => {
+          findLabels(e.target)
+          emitView(e.target, false)
+        }}
+        onStyleData={(e) => e.target.isStyleLoaded() && findLabels(e.target)}
         style={{ position: "absolute", inset: 0 }}
       >
+        {density && (
+          <Source id="density" type="geojson" data={density}>
+            <Layer id="density-heat" type="heatmap" paint={densityPaint(mode)} beforeId={labelsId} />
+          </Source>
+        )}
         <DeckOverlay interleaved layers={layers} onHover={handleHover} onClick={handleClick} pickingRadius={8} />
       </MapGL>
       {tip && <MapTooltip tip={tip} mode={mode} container={containerRef.current} />}
