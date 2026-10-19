@@ -17,7 +17,10 @@ export interface SourceAdapter {
   name: string
   homepage: string
   rawExt: "json" | "xml"
-  fetchRaw(): Promise<string>
+  /** Minimum hours between live fetches; a younger cached payload is reused instead */
+  refreshHours?: number
+  /** `previous` is the last cached payload, so per-listing pages fetched before need not be fetched again */
+  fetchRaw(previous: string | null): Promise<string>
   parse(raw: string): Draft[]
 }
 

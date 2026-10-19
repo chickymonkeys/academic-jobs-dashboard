@@ -1,6 +1,7 @@
-# Fetches EJM and JOE, builds the app and deploys it to Cloudflare Workers with Void: on every push
-# to main and every 3 hours. The snapshot (public/data) is never committed; it lives only in the
-# deployed site. Open tabs pick up a new one within META_POLL_MS because the client polls
+# Fetches the listing sources (scripts/ingest.ts), builds the app and deploys it to Cloudflare Workers
+# with Void: on every push to main and every 3 hours. The MUR portal and AcademicTransfer are re-read at most
+# every 12 hours; between their refreshes the run reuses the cached payload. The snapshot (public/data) is never
+# committed; it lives only in the deployed site. Open tabs pick up a new one within META_POLL_MS because the client polls
 # /data/meta.json for a new version.
 #
 # Only pipeline state without personal data is committed back: data/seen.json (first-seen dates,

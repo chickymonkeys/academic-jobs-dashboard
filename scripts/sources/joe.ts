@@ -86,6 +86,7 @@ function toDraft(p: JoePosition, year: string, issue: string): Draft {
     institution: clean(p.jp_institution ?? "Unknown institution"),
     department: department || null,
     category: classifyCategory({ title, types: [], section }),
+    disciplines: ["econ"],
     positionTypes: section ? [section.replace(/^(US|International):\s*/, "")] : [],
     fields: fieldsFromJel(jel.map((j) => j.code)),
     city: tidyPlace(loc.city),

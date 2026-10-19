@@ -113,6 +113,15 @@ export function summarize(blocks: Block[], max = 240): string {
   return cut.slice(0, cut.lastIndexOf(" ")).replace(/[,;:.\s]+$/, "") + "…"
 }
 
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+
+/** "19 October 2026" or "Mon, 30 Nov 2026 23:59:59 EST" → "2026-11-30": the day as written, with no timezone shift */
+export function dayFromText(s: string | null | undefined): string | null {
+  const m = s?.match(/\b(\d{1,2})\s+([a-z]{3})[a-z]*\.?,?\s+(\d{4})\b/i)
+  const month = m ? MONTHS.indexOf(m[2].toLowerCase()) + 1 : 0
+  return m && month ? `${m[3]}-${String(month).padStart(2, "0")}-${m[1].padStart(2, "0")}` : null
+}
+
 export function normName(s: string) {
   return s
     .normalize("NFD")
@@ -124,13 +133,25 @@ export function normName(s: string) {
     .trim()
 }
 
-/** JOE ships cities in UPPERCASE; render them as names */
+/** JOE ships cities in UPPERCASE (and the MUR portal sometimes in lowercase); render them as names */
 export function tidyPlace(s: string | null | undefined): string | null {
   const t = s ? clean(s) : ""
   if (!t) return null
   // Keep mixed case and short codes ("CA", "NSW") as published
-  if (t !== t.toUpperCase() || t.length <= 3) return t
+  if ((t !== t.toUpperCase() && t !== t.toLowerCase()) || t.length <= 3) return t
   return t.toLowerCase().replace(/(^|[\s\-'.(/])([a-z])/g, (_, p: string, c: string) => p + c.toUpperCase())
+}
+
+const SMALL = new Set("of the and for in at on de di du des del della degli la le y".split(" "))
+/** "THE UNIVERSITY OF HONG KONG (HKU)" → "The University of Hong Kong (HKU)"; mixed-case names are left alone */
+export function tidyName(s: string) {
+  if (s !== s.toUpperCase() || s.length <= 6) return s
+  return s
+    .toLowerCase()
+    .replace(/[^\s]+/g, (w, at: number) =>
+      at > 0 && SMALL.has(w) ? w : w.replace(/(^|[-'’(/])(\p{L})/gu, (_, p: string, c: string) => p + c.toUpperCase()),
+    )
+    .replace(/\([^)]*\)/g, (m) => m.toUpperCase())
 }
 
 const STOP = new Set(

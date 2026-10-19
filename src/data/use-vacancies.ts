@@ -28,7 +28,7 @@ export function useVacancies(onShowNew?: () => void) {
       if (added > 0) {
         toast.add({
           title: `${added} new position${added === 1 ? "" : "s"} just posted`,
-          description: "Listings refresh automatically from EJM and JOE.",
+          description: "Listings refresh automatically from every source.",
           icon: "i-lucide-sparkles",
           actions: onShowNew ? [{ label: "Show", color: "neutral", variant: "outline", onClick: onShowNew }] : undefined,
         })
