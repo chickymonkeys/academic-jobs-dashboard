@@ -12,19 +12,20 @@ export function hexToRgba(hex: string, alpha = 255): RGBA {
 export const categoryHex = (c: Category, mode: Mode) => CATEGORY_BY_ID[c].color[mode]
 export const categoryRgba = (c: Category, mode: Mode, alpha = 255) => hexToRgba(categoryHex(c, mode), alpha)
 
-/** Map-surface tokens for deck.gl marks (rings use the surface so overlapping marks stay separable) */
+/**
+ * Map-surface tokens for deck.gl marks (rings use the surface so overlapping marks stay separable).
+ * Clusters and count badges are neutral ink, so hue on the map only ever means position type.
+ */
 export const MAP_TOKENS = {
   light: {
     surface: hexToRgba("#fcfcfb"),
-    cluster: hexToRgba("#1c5cab"),
+    cluster: hexToRgba("#3a4251"),
     clusterText: hexToRgba("#ffffff"),
-    halo: hexToRgba("#2a78d6", 60),
   },
   dark: {
     surface: hexToRgba("#1a1a19"),
-    cluster: hexToRgba("#3987e5"),
-    clusterText: hexToRgba("#0b1424"),
-    halo: hexToRgba("#3987e5", 70),
+    cluster: hexToRgba("#e4e6ea"),
+    clusterText: hexToRgba("#16191f"),
   },
 } as const
 

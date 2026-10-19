@@ -19,8 +19,8 @@ pnpm build && pnpm preview
 |---|---|
 | **Map as canvas, UI floats** | Translucent panels over a full-bleed map; the camera is padding-aware, so fits and reveals frame the *unobstructed* area, not the area behind panels. |
 | **Linked views** | List ↔ map brushing (hover a row → pin highlights; hover a pin → row highlights). The list follows the map ("111 positions in visible map area · List all"), and you can turn that off. |
-| **Progressive disclosure** | Cluster → hover breakdown (category bar + institutions) → click zooms smoothly to the expansion level → pin hover card → detail panel → summary first, full description lazy-loaded, "Read full description" → "What to submit" checklist, JEL codes, nearby positions. |
-| **Geographic navigation** | Region chips with live counts; search suggests *places* and *institutions* to fly to; "near me"; fit-to-results; globe view; positions sharing one address open as a group instead of an endless zoom. |
+| **Progressive disclosure** | Cluster → hover breakdown (category bar + institutions) → click zooms smoothly to the expansion level → pins (one per place, with a count badge when several positions share it) → pin hover card → detail panel → summary first, full description lazy-loaded, "Read full description" → "What to submit" checklist, JEL codes, nearby positions. |
+| **Geographic navigation** | Region chips with live counts; search suggests *places* and *institutions* to fly to; "near me"; fit-to-results; globe view; a pin shared by several positions lists them instead of zooming forever, and says when it is only city-level. |
 | **Intuitive search** | Live, diacritic-insensitive, ranked (title > institution > place); faceted filters show counts computed with every *other* filter applied; the legend doubles as a position-type filter. |
 | **Shareable state** | Every filter, the selection, the layout and the camera live in the URL (Zod-validated, self-healing). Back closes the detail panel. |
 | **Urgency without alarm** | Deadlines carry icon + words ("3 days left"), never color alone; "New" for listings posted in the last 7 days; a saved shortlist that works offline. |
@@ -28,7 +28,7 @@ pnpm build && pnpm preview
 | **Keyboard** | `/` or `⌘K` search · `j`/`k` or `↑`/`↓` step through results (camera follows) · `Esc` back out · `f` fit · `+`/`−` zoom. |
 | **Trust** | A "Updated n min ago" popover shows each feed's health, count and fetch time; geocoded-to-country pins say "Approximate pin". |
 
-Map colors are the validated categorical palette (slots 1–5 in their CVD-safe order), with a sequential single-hue ramp for the density layer. Light and dark mode each get their own steps.
+Map colors are the validated categorical palette (slots 1–5 in their CVD-safe order), with a sequential single-hue ramp for the density layer. Clusters and count badges are neutral ink, so hue on the map only ever means position type. Listings are grouped by coordinate before clustering, and clustering stops at zoom 10, so every place gets its own pin up close. Light and dark mode each get their own steps.
 
 ## Architecture
 

@@ -351,7 +351,8 @@ function Workspace() {
       onSelect={selectFromMap}
       onFocusGroup={(ids) => {
         const vs = resolve(ids)
-        setGroup({ ids, label: vs[0]?.institution ?? "this location" })
+        const one = new Set(vs.map((v) => v.institution)).size === 1
+        setGroup({ ids, label: (one ? vs[0]?.institution : (vs[0]?.city ?? vs[0]?.country)) ?? "this location" })
         if (!isDesktop) setSnap(SNAP_HALF)
       }}
       onViewChange={onViewChange}

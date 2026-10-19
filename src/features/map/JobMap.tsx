@@ -14,16 +14,23 @@ import { deadlineLabel } from "@/lib/dates"
 import { DeadlineText } from "@/components/job-atoms"
 import { useCameraPadding, useCamera } from "./camera"
 
-type PointProps = { id: string; category: Category }
-type ClusterProps = Record<Category, number>
-type PointF = PointFeature<PointProps>
+type Counts = Record<Category, number>
+/** Every position at one coordinate. Many share one: same institution, or a city-level geocode. */
+type Site = { lng: number; lat: number; ids: string[]; counts: Counts; top: Category; approx: boolean }
+type SiteProps = { i: number }
+type ClusterProps = Counts & { n: number }
+type SiteF = PointFeature<SiteProps>
 type ClusterF = ClusterFeature<ClusterProps>
 
-const CLUSTER_MAX_ZOOM = 13
+// Clusters group *sites*, not listings, and only while sites are genuinely crowded:
+// from zoom 10 every place is its own pin, so the map never shows an unexplained bubble up close.
+const CLUSTER = { radius: 32, maxZoom: 9, minPoints: 3 } as const
+
+const zeroCounts = () => Object.fromEntries(CATEGORY_IDS.map((c) => [c, 0])) as Counts
 
 type Tip = { x: number; y: number } & (
   | { kind: "point"; v: Vacancy }
-  | { kind: "cluster"; count: number; breakdown: ClusterProps; names: string[] }
+  | { kind: "group"; count: number; breakdown: Counts; names: string[]; where: string; hint: string; approx?: boolean }
 )
 
 function DeckOverlay(props: MapboxOverlayProps) {
@@ -47,7 +54,7 @@ export type JobMapProps = {
   onViewChange: (bounds: Bounds | null, camera: string, userInitiated: boolean) => void
 }
 
-const clusterRadius = (n: number) => Math.min(13 + Math.sqrt(n) * 3.4, 42)
+const clusterRadius = (n: number) => Math.min(12 + Math.sqrt(n) * 2.6, 34)
 const shortCount = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n))
 
 export const JobMap = memo(function JobMap(props: JobMapProps) {
@@ -60,37 +67,54 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
   const [tip, setTip] = useState<Tip | null>(null)
   const tokens = MAP_TOKENS[mode]
 
+  const sites = useMemo(() => {
+    const byKey = new Map<string, Site>()
+    for (const v of points) {
+      const key = `${v.lng.toFixed(4)},${v.lat.toFixed(4)}`
+      let s = byKey.get(key)
+      if (!s) {
+        s = { lng: v.lng, lat: v.lat, ids: [], counts: zeroCounts(), top: v.category, approx: false }
+        byKey.set(key, s)
+      }
+      s.ids.push(v.id)
+      s.counts[v.category]++
+      if (s.counts[v.category] > s.counts[s.top]) s.top = v.category
+      if (v.geoPrecision !== "exact") s.approx = true
+    }
+    return [...byKey.values()]
+  }, [points])
+
   const index = useMemo(() => {
-    const sc = new Supercluster<PointProps, ClusterProps>({
-      radius: 54,
-      maxZoom: CLUSTER_MAX_ZOOM,
-      map: (p) => Object.fromEntries(CATEGORY_IDS.map((c) => [c, p.category === c ? 1 : 0])) as ClusterProps,
+    const sc = new Supercluster<SiteProps, ClusterProps>({
+      ...CLUSTER,
+      map: ({ i }) => ({ ...sites[i].counts, n: sites[i].ids.length }),
       reduce: (acc, p) => {
         for (const c of CATEGORY_IDS) acc[c] += p[c]
+        acc.n += p.n
       },
     })
     sc.load(
-      points.map(
-        (v): PointF => ({
-          type: "Feature",
-          geometry: { type: "Point", coordinates: [v.lng, v.lat] },
-          properties: { id: v.id, category: v.category },
-        }),
+      sites.map(
+        (s, i): SiteF => ({ type: "Feature", geometry: { type: "Point", coordinates: [s.lng, s.lat] }, properties: { i } }),
       ),
     )
     return sc
-  }, [points])
+  }, [sites])
 
-  const { clusters, singles } = useMemo(() => {
-    const all = index.getClusters([-180, -85, 180, 85], zoom)
+  const { clusters, pins, stacks } = useMemo(() => {
     const clusters: ClusterF[] = []
-    const singles: PointF[] = []
-    for (const f of all) {
+    const pins: Site[] = []
+    for (const f of index.getClusters([-180, -85, 180, 85], zoom)) {
       if ("cluster" in f.properties && f.properties.cluster) clusters.push(f as ClusterF)
-      else singles.push(f as PointF)
+      else pins.push(sites[(f as SiteF).properties.i])
     }
-    return { clusters, singles }
-  }, [index, zoom])
+    return { clusters, pins, stacks: pins.filter((s) => s.ids.length > 1) }
+  }, [index, sites, zoom])
+
+  const leafIds = useCallback(
+    (clusterId: number, limit: number) => index.getLeaves(clusterId, limit).flatMap((l) => sites[l.properties.i].ids),
+    [index, sites],
+  )
 
   const highlighted = useMemo(() => {
     const out: Array<{ v: Vacancy; selected: boolean }> = []
@@ -164,7 +188,7 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
         data: clusters,
         pickable: true,
         getPosition: (f) => f.geometry.coordinates as [number, number],
-        getRadius: (f) => clusterRadius(f.properties.point_count),
+        getRadius: (f) => clusterRadius(f.properties.n),
         radiusUnits: "pixels",
         stroked: true,
         lineWidthUnits: "pixels",
@@ -177,7 +201,7 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
         id: "cluster-labels",
         data: clusters,
         getPosition: (f) => f.geometry.coordinates as [number, number],
-        getText: (f) => shortCount(f.properties.point_count),
+        getText: (f) => shortCount(f.properties.n),
         getSize: 12,
         getColor: tokens.clusterText,
         fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
@@ -187,29 +211,60 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
         getAlignmentBaseline: "center",
         updateTriggers: { getColor: mode },
       }),
-      new ScatterplotLayer<PointF>({
-        id: "points",
-        data: singles,
+      new ScatterplotLayer<Site>({
+        id: "sites",
+        data: pins,
         pickable: true,
-        getPosition: (f) => f.geometry.coordinates as [number, number],
-        getRadius: 6,
+        getPosition: (s) => [s.lng, s.lat],
+        getRadius: (s) => (s.ids.length > 1 ? 8 : 7),
         radiusUnits: "pixels",
         stroked: true,
         lineWidthUnits: "pixels",
         getLineWidth: 2,
         getLineColor: surface,
-        getFillColor: (f) => categoryRgba(f.properties.category, mode),
+        getFillColor: (s) => categoryRgba(s.top, mode),
         updateTriggers: { getFillColor: mode, getLineColor: mode },
+      }),
+      // Count badge on places holding several positions, in the same ink as clusters
+      new TextLayer<Site>({
+        id: "site-badges",
+        data: stacks,
+        pickable: true,
+        getPosition: (s) => [s.lng, s.lat],
+        getText: (s) => shortCount(s.ids.length),
+        getPixelOffset: [11, -11],
+        getSize: 11,
+        getColor: tokens.clusterText,
+        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+        fontWeight: 700,
+        characterSet: "0123456789.k",
+        getTextAnchor: "middle",
+        getAlignmentBaseline: "center",
+        background: true,
+        getBackgroundColor: tokens.cluster,
+        getBorderColor: surface,
+        getBorderWidth: 1.5,
+        backgroundPadding: [5, 2, 5, 2],
+        backgroundBorderRadius: 8,
+        updateTriggers: { getColor: mode, getBackgroundColor: mode, getBorderColor: mode },
       }),
       ...highlightLayers,
     ]
-  }, [layer, points, clusters, singles, highlighted, mode, tokens, zoom])
+  }, [layer, points, clusters, pins, stacks, highlighted, mode, tokens, zoom])
 
-  const pointId = (info: PickingInfo) => {
-    const o = info.object as PointF | Vacancy | undefined
-    if (!o) return null
-    return "properties" in o ? o.properties.id : o.id
-  }
+  const groupTip = useCallback(
+    (ids: string[], counts: ClusterProps, where: string | null, hint: string, approx?: boolean) => {
+      const vs = ids.map((id) => byId.get(id)).filter((v): v is Vacancy => !!v)
+      let names = [...new Set(vs.map((v) => v.institution))]
+      if (!where) {
+        // A place: name it by its one institution, or by its city when several share the pin
+        where = `at ${names.length === 1 ? names[0] : (vs[0]?.city ?? vs[0]?.country ?? "this place")}`
+        if (names.length === 1) names = []
+      }
+      return { kind: "group" as const, count: counts.n, breakdown: counts, names, where, hint, approx }
+    },
+    [byId],
+  )
 
   const handleHover = useCallback(
     (info: PickingInfo) => {
@@ -220,45 +275,47 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
         onHover(null)
         return
       }
-      if (info.layer.id === "points") {
-        const v = byId.get(pointId(info) ?? "")
-        if (v) {
-          setTip({ kind: "point", v, x: info.x, y: info.y })
-          onHover(v.id)
-        }
-        return
-      }
-      if (info.layer.id === "clusters") {
+      const { x, y } = info
+      const id = info.layer.id
+      const single = id === "points" ? (info.object as Vacancy) : null
+      const site = id === "sites" || id === "site-badges" ? (info.object as Site) : null
+      const v = single ?? (site?.ids.length === 1 ? byId.get(site.ids[0]) : undefined)
+      if (v) {
+        setTip({ kind: "point", v, x, y })
+        onHover(v.id)
+      } else if (site) {
+        const counts = { ...site.counts, n: site.ids.length }
+        setTip({ ...groupTip(site.ids, counts, null, "Click to list them", site.approx), x, y })
+        onHover(null)
+      } else if (id === "clusters") {
         const f = info.object as ClusterF
-        const leaves = index.getLeaves(f.properties.cluster_id, 40)
-        const names = [...new Set(leaves.map((l) => byId.get(l.properties.id)?.institution).filter(Boolean))] as string[]
-        setTip({ kind: "cluster", count: f.properties.point_count, breakdown: f.properties, names, x: info.x, y: info.y })
+        // Names are sampled from the first leaves; count and breakdown cover the whole cluster
+        setTip({ ...groupTip(leafIds(f.properties.cluster_id, 40), f.properties, "in this area", "Click to zoom in"), x, y })
         onHover(null)
       }
     },
-    [byId, index, onHover],
+    [byId, groupTip, leafIds, onHover],
   )
 
   const handleClick = useCallback(
     (info: PickingInfo) => {
       if (!info.picked || !info.layer) return
       setTip(null)
-      if (info.layer.id === "points") {
-        const id = pointId(info)
-        if (id) onSelect(id)
-        return
-      }
-      if (info.layer.id === "clusters") {
+      const id = info.layer.id
+      if (id === "points") {
+        onSelect((info.object as Vacancy).id)
+      } else if (id === "sites" || id === "site-badges") {
+        // Zooming can't separate positions that share a coordinate, so list them instead
+        const s = info.object as Site
+        if (s.ids.length === 1) onSelect(s.ids[0])
+        else {
+          onFocusGroup(s.ids)
+          camera.reveal(s.lng, s.lat)
+        }
+      } else if (id === "clusters") {
         const f = info.object as ClusterF
         const [lng, lat] = f.geometry.coordinates
-        const expansion = index.getClusterExpansionZoom(f.properties.cluster_id)
-        if (expansion > CLUSTER_MAX_ZOOM) {
-          // Several positions at one address: zooming can't separate them, so list them instead.
-          onFocusGroup(index.getLeaves(f.properties.cluster_id, Infinity).map((l) => l.properties.id))
-          camera.easeTo(lng, lat, Math.max(camera.getZoom(), 11))
-        } else {
-          camera.easeTo(lng, lat, Math.min(expansion + 0.4, 16))
-        }
+        camera.easeTo(lng, lat, Math.min(index.getClusterExpansionZoom(f.properties.cluster_id) + 0.4, 16))
       }
     },
     [camera, index, onFocusGroup, onSelect],
@@ -357,18 +414,18 @@ function MapTooltip({ tip, mode, container }: { tip: Tip; mode: Mode; container:
           <span className="sr-only">{deadlineLabel(tip.v.deadline)}</span>
         </>
       ) : (
-        <ClusterTip tip={tip} mode={mode} />
+        <GroupTip tip={tip} mode={mode} />
       )}
     </div>
   )
 }
 
-function ClusterTip({ tip, mode }: { tip: Extract<Tip, { kind: "cluster" }>; mode: Mode }) {
+function GroupTip({ tip, mode }: { tip: Extract<Tip, { kind: "group" }>; mode: Mode }) {
   const parts = CATEGORIES.filter((c) => tip.breakdown[c.id] > 0)
   return (
     <>
-      <div className="text-[13px] font-semibold text-foreground">
-        {tip.count} positions <span className="font-normal text-muted-foreground">in this area</span>
+      <div className="line-clamp-2 text-[13px] font-semibold text-foreground">
+        {tip.count} positions <span className="font-normal text-muted-foreground">{tip.where}</span>
       </div>
       <div className="mt-2 flex h-2 w-full gap-[2px]" aria-hidden>
         {parts.map((c) => (
@@ -396,7 +453,10 @@ function ClusterTip({ tip, mode }: { tip: Extract<Tip, { kind: "cluster" }>; mod
           </span>
         </div>
       )}
-      <div className="mt-2 text-[11px] text-muted-foreground">Click to zoom in</div>
+      {tip.approx && (
+        <div className="mt-2 text-[11px] text-muted-foreground">Pinned to the city, not the exact address</div>
+      )}
+      <div className="mt-2 text-[11px] text-muted-foreground">{tip.hint}</div>
     </>
   )
 }
