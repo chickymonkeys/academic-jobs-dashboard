@@ -14,7 +14,7 @@ const dark = computed(() => mode.value === "dark")
 function locate() {
   if (!("geolocation" in navigator)) return void toast.add({ title: "Location isn't available in this browser", color: "error" })
   navigator.geolocation.getCurrentPosition(
-    (p) => props.camera.flyTo(p.coords.longitude, p.coords.latitude, 7),
+    (p) => props.camera.flyTo(p.coords.longitude, p.coords.latitude, 7, { byUser: true }),
     () =>
       toast.add({
         title: "Couldn't get your location",

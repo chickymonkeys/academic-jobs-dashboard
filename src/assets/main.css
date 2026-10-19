@@ -130,3 +130,12 @@
 .dark .maplibregl-ctrl-attrib-button {
   filter: invert(1);
 }
+
+/* iOS zooms the page into any focused field set under 16px; touch screens get 16px fields (unlayered, so this wins) */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}

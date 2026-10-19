@@ -2,20 +2,21 @@
 import { computed } from "vue"
 import type { DropdownMenuItem } from "@nuxt/ui"
 import type { AppSearch, SetSearch } from "@/app/search"
-import type { SortKey } from "@/features/filters/filtering"
+import type { Scope, SortKey } from "@/features/filters/filtering"
 
 const props = defineProps<{
   count: number
   total: number
-  scope: "group" | "area" | "world" | "everywhere"
+  scope: Scope
   groupLabel?: string
+  regionLabel?: string
   sortKey: SortKey
   hasQuery: boolean
   search: AppSearch
   set: SetSearch
   showViewToggle: boolean
 }>()
-const emit = defineEmits<{ clearGroup: [] }>()
+const emit = defineEmits<{ clearGroup: []; world: [] }>()
 
 const SORTS: Array<{ id: SortKey; label: string }> = [
   { id: "relevance", label: "Best match" },
@@ -61,6 +62,10 @@ const link = "font-medium text-primary underline-offset-2 hover:underline"
       <p class="truncate text-xs text-muted">
         <template v-if="scope === 'group'">
           at {{ groupLabel }} · <button :class="link" @click="emit('clearGroup')">Show all</button>
+        </template>
+        <template v-else-if="scope === 'region'">
+          in {{ regionLabel }} · {{ total.toLocaleString() }} total ·
+          <button :class="link" @click="emit('world')">Show all</button>
         </template>
         <template v-else-if="scope === 'area'">
           in visible map area · {{ total.toLocaleString() }} total ·

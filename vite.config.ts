@@ -21,9 +21,14 @@ export default defineConfig({
     chunkSizeWarningLimit: 2000,
     rolldownOptions: {
       output: {
-        // The map engine rarely changes; its own chunk stays cached across deploys of app code
+        // The map engine rarely changes; its own chunk stays cached across deploys of app code. It loads after the
+        // app, so Vite's preload helper (which the map's own lazy imports pull in) is kept out of it: otherwise the
+        // entry would import the helper from there and wait for the whole map engine before showing anything.
         codeSplitting: {
-          groups: [{ name: "map", test: /node_modules[\\/](maplibre-gl|@deck\.gl|@luma\.gl|@loaders\.gl|@math\.gl|@probe\.gl|supercluster)/ }],
+          groups: [
+            { name: "preload-helper", test: /vite[\\/]preload-helper/, priority: 1 },
+            { name: "map", test: /node_modules[\\/](maplibre-gl|@deck\.gl|@luma\.gl|@loaders\.gl|@math\.gl|@probe\.gl|supercluster)/ },
+          ],
         },
       },
     },

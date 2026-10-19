@@ -5,7 +5,7 @@ import { MapboxOverlay } from "@deck.gl/mapbox"
 import { ScatterplotLayer, TextLayer } from "@deck.gl/layers"
 import type { PickingInfo } from "@deck.gl/core"
 import Supercluster, { type ClusterFeature, type PointFeature } from "supercluster"
-import { WORLD_BOUNDS, type Bounds } from "@/domain/geo"
+import { boundsCover, WORLD_BOUNDS, type Bounds } from "@/domain/geo"
 import { CATEGORY_IDS, type Category, type Vacancy } from "@/domain/vacancy"
 import { BASEMAP, MAP_TOKENS, categoryRgba, type Mode } from "@/lib/colors"
 import { useCamera, useMapContext } from "./camera"
@@ -22,6 +22,8 @@ type ClusterF = ClusterFeature<ClusterProps>
 // Clusters group *sites*, not listings, and only while sites are genuinely crowded:
 // from zoom 10 every place is its own pin, so the map never shows an unexplained bubble up close.
 const CLUSTER = { radius: 32, maxZoom: 9, minPoints: 3 } as const
+const MIN_ZOOM = 0.6
+const MAX_ZOOM = 16
 
 const zeroCounts = () => Object.fromEntries(CATEGORY_IDS.map((c) => [c, 0])) as Counts
 const clusterRadius = (n: number) => Math.min(12 + Math.sqrt(n) * 2.6, 34)
@@ -51,6 +53,9 @@ const container = ref<HTMLDivElement | null>(null)
 const zoom = ref(Math.floor(props.initialCamera?.zoom ?? 1.5))
 const tip = shallowRef<Tip | null>(null)
 const tokens = computed(() => MAP_TOKENS[props.mode])
+// Touch has no hover: the mouse events a browser emulates after a tap would pin a hover card and ring that never clear
+let touch = false
+const onPointer = (e: PointerEvent) => (touch = e.pointerType === "touch")
 
 const sites = computed(() => {
   const byKey = new Map<string, Site>()
@@ -243,8 +248,8 @@ function groupTip(ids: string[], counts: ClusterProps, where: string | null, hin
 
 function onHover(info: PickingInfo) {
   const canvas = ctx.map.value?.getCanvas()
-  if (canvas) canvas.style.cursor = info.picked ? "pointer" : ""
-  if (!info.picked || !info.layer) {
+  if (canvas) canvas.style.cursor = info.picked && !touch ? "pointer" : ""
+  if (!info.picked || !info.layer || touch) {
     tip.value = null
     emit("hover", null)
     return
@@ -268,8 +273,10 @@ function onHover(info: PickingInfo) {
   }
 }
 
-function onClick(info: PickingInfo) {
-  if (!info.picked || !info.layer) return
+// Picked on MapLibre's own click, not deck.gl's: deck fires on pointerup, and on touch screens the mousedown the
+// browser emulates right after makes MapLibre stop every camera animation, so a tapped cluster never zoomed in.
+function onClick(info: PickingInfo | null) {
+  if (!info?.picked || !info.layer) return
   tip.value = null
   const id = info.layer.id
   if (id === "sites" || id === "site-badges") {
@@ -283,7 +290,8 @@ function onClick(info: PickingInfo) {
   } else if (id === "clusters") {
     const f = info.object as ClusterF
     const [lng, lat] = f.geometry.coordinates as [number, number]
-    camera.easeTo(lng, lat, Math.min(index.value.getClusterExpansionZoom(f.properties.cluster_id) + 0.4, 16))
+    const z = Math.min(index.value.getClusterExpansionZoom(f.properties.cluster_id) + 0.4, MAX_ZOOM)
+    camera.easeTo(lng, lat, z, { byUser: true })
   }
 }
 
@@ -291,17 +299,21 @@ function emitView(m: maplibregl.Map, userInitiated: boolean) {
   const { lat, lng } = m.getCenter()
   const z = m.getZoom()
   const cameraStr = `${lat.toFixed(3)},${lng.toFixed(3)},${z.toFixed(2)}`
-  // Bounds of the *unobstructed* viewport: what the user can actually see between the panels.
+  // Bounds of the *unobstructed* viewport: what the user can actually see between the panels. None (the list is
+  // worldwide) when zoomed all the way out, which on a phone still crops the world (MapLibre keeps it at least
+  // screen-tall), when the whole default world frame is in view, or on a zoomed-out globe, whose corners miss the earth.
+  const { clientWidth: w, clientHeight: h } = m.getContainer()
+  const zoomedOut = z <= Math.max(MIN_ZOOM, Math.log2(Math.max(w, h) / 512)) + 0.05
   let bounds: Bounds | null = null
-  if (z >= 2.2) {
-    const padding = ctx.padding.value
-    const { clientWidth: w, clientHeight: h } = m.getContainer()
-    const nw = m.unproject([Math.min(padding.left, w * 0.5), Math.min(padding.top, h * 0.4)])
-    const se = m.unproject([Math.max(w - padding.right, w * 0.5), Math.max(h - padding.bottom, h * 0.6)])
+  if (!zoomedOut && !(props.globe && z < 2.2)) {
+    const p = camera.padding()
+    const nw = m.unproject([p.left, p.top])
+    const se = m.unproject([w - p.right, h - p.bottom])
     if ([nw.lng, nw.lat, se.lng, se.lat].every(Number.isFinite)) {
       let east = se.lng
       if (east < nw.lng) east += 360
-      bounds = [nw.lng, se.lat, east, nw.lat]
+      const visible: Bounds = [nw.lng, se.lat, east, nw.lat]
+      if (!boundsCover(visible, WORLD_BOUNDS, 0.5)) bounds = visible
     }
   }
   emit("viewChange", bounds, cameraStr, userInitiated)
@@ -336,8 +348,10 @@ onMounted(() => {
           ] as [[number, number], [number, number]],
           fitBoundsOptions: { padding: ctx.padding.value },
         }),
-    minZoom: 0.6,
-    maxZoom: 16,
+    minZoom: MIN_ZOOM,
+    maxZoom: MAX_ZOOM,
+    // Past 2x, extra pixels cost phone GPUs far more than anyone can see on a map of dots
+    pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
     renderWorldCopies: false,
     dragRotate: false,
     pitchWithRotate: false,
@@ -345,11 +359,17 @@ onMounted(() => {
     attributionControl: { compact: true },
   })
   m.touchZoomRotate.disableRotation()
-  overlay = new MapboxOverlay({ interleaved: true, layers: layers.value, onHover, onClick, pickingRadius: 8 })
+  overlay = new MapboxOverlay({ interleaved: true, layers: layers.value, onHover, pickingRadius: 8 })
   m.addControl(overlay)
+  // Clusters for the zoom the map actually opened at (the initial fit can land anywhere), not the URL's
+  zoom.value = Math.floor(m.getZoom())
   m.on("styledata", applyProjection)
+  m.on("click", (e) => onClick(overlay?.pickObject({ x: e.point.x, y: e.point.y, radius: touch ? 16 : 8 }) ?? null))
   m.on("move", () => (zoom.value = Math.floor(m.getZoom())))
-  m.on("moveend", (e) => emitView(m, !!(e as { originalEvent?: unknown }).originalEvent))
+  m.on("moveend", (e) => {
+    const { originalEvent, byUser } = e as { originalEvent?: unknown; byUser?: boolean }
+    emitView(m, !!originalEvent || !!byUser)
+  })
   m.on("load", () => emitView(m, false))
   ctx.map.value = m
 })
@@ -371,7 +391,13 @@ watch(() => props.globe, applyProjection)
 </script>
 
 <template>
-  <div ref="root" class="absolute inset-0" @mouseleave="tip = null">
+  <div
+    ref="root"
+    class="absolute inset-0"
+    @mouseleave="tip = null"
+    @pointerdown.capture="onPointer"
+    @pointermove.capture="onPointer"
+  >
     <!-- Sized, not positioned: MapLibre's own (unlayered) CSS makes its container position: relative -->
     <div ref="container" class="h-full w-full" />
     <MapTooltip v-if="tip" :tip="tip" :mode="mode" :container="root" />

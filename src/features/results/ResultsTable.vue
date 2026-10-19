@@ -81,7 +81,7 @@ const rowClass = (row: TableRow<Indexed>) =>
       </button>
     </template>
     <template #save-cell="{ row }">
-      <SaveButton :id="row.original.v.id" class="size-7" />
+      <SaveButton :id="row.original.v.id" :tooltip="false" class="size-7" />
     </template>
     <template #title-cell="{ row }">
       <div class="min-w-0">
