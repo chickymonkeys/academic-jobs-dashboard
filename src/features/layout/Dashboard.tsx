@@ -82,7 +82,6 @@ function Workspace() {
   const zoomOnSelect = useRef(false)
 
   const view = isDesktop ? (search.view ?? "list") : "list"
-  const layer = search.layer ?? "points"
   const sortKey: SortKey = search.sort ?? (search.q ? "relevance" : "deadline")
   const areaOn = search.area !== false
   const selected = search.sel ? byId.get(search.sel) : undefined
@@ -343,7 +342,6 @@ function Workspace() {
       byId={byId}
       selectedId={search.sel}
       hoveredId={hoveredId}
-      layer={layer}
       globe={!!search.globe}
       mode={mode}
       initialCamera={initialCamera}
@@ -362,10 +360,8 @@ function Workspace() {
   const controls = (compact: boolean) => (
     <MapControls
       camera={camera}
-      layer={layer}
       globe={!!search.globe}
       compact={compact}
-      onLayer={(l) => set({ layer: l === "points" ? undefined : l })}
       onGlobe={(g) => set({ globe: g || undefined })}
       onFitResults={fitResults}
     />

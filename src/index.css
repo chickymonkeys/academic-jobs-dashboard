@@ -38,8 +38,8 @@
   --sidebar-border: oklch(0.905 0.007 262);
   --sidebar-ring: oklch(0.6 0.14 264);
 
-  /* Floating surfaces over the map */
-  --glass: oklch(1 0 0 / 0.94);
+  /* Floating surfaces over the map: opaque, so map marks never ghost through as smudges */
+  --glass: oklch(1 0 0);
   --glass-border: oklch(0.2 0.02 262 / 0.08);
   --shadow-float: 0 1px 2px oklch(0.2 0.02 262 / 0.06), 0 8px 24px -6px oklch(0.2 0.02 262 / 0.14);
   --urgent: oklch(0.58 0.2 28);
@@ -80,7 +80,7 @@
   --sidebar-border: oklch(1 0 0 / 0.1);
   --sidebar-ring: oklch(0.62 0.12 264);
 
-  --glass: oklch(0.21 0.014 262 / 0.93);
+  --glass: oklch(0.21 0.014 262);
   --glass-border: oklch(1 0 0 / 0.09);
   --shadow-float: 0 1px 2px oklch(0 0 0 / 0.3), 0 10px 30px -8px oklch(0 0 0 / 0.55);
   --urgent: oklch(0.7 0.17 28);
@@ -150,13 +150,11 @@
 }
 
 @layer components {
-  /* Floating panel over the map: translucent, blurred, hairline border */
+  /* Floating panel over the map: solid surface, hairline border, soft elevation */
   .surface-float {
     background: var(--glass);
     border: 1px solid var(--glass-border);
     box-shadow: var(--shadow-float);
-    backdrop-filter: blur(14px) saturate(1.4);
-    -webkit-backdrop-filter: blur(14px) saturate(1.4);
   }
   .scrollbar-thin {
     scrollbar-width: thin;

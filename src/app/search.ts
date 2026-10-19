@@ -22,7 +22,6 @@ export const searchSchema = z.object({
   area: z.boolean().optional().catch(undefined),
   sel: z.string().optional().catch(undefined),
   view: z.enum(["list", "table"]).optional().catch(undefined),
-  layer: z.enum(["points", "density"]).optional().catch(undefined),
   globe: z.boolean().optional().catch(undefined),
   /** camera: "lat,lng,zoom" */
   at: z.string().optional().catch(undefined),

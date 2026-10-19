@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useRef, useState } from "react"
-import MapGL, { Layer, Source, useControl, type ViewStateChangeEvent } from "react-map-gl/maplibre"
+import MapGL, { useControl, type ViewStateChangeEvent } from "react-map-gl/maplibre"
 import type { IControl, Map as MaplibreMap } from "maplibre-gl"
 import { MapboxOverlay, type MapboxOverlayProps } from "@deck.gl/mapbox"
 import { ScatterplotLayer, TextLayer } from "@deck.gl/layers"
@@ -8,7 +8,7 @@ import Supercluster, { type ClusterFeature, type PointFeature } from "superclust
 import { CATEGORIES, CATEGORY_BY_ID } from "@/domain/taxonomy"
 import { WORLD_BOUNDS, type Bounds } from "@/domain/geo"
 import { CATEGORY_IDS, type Category, type Vacancy } from "@/domain/vacancy"
-import { BASEMAP, MAP_TOKENS, categoryRgba, densityPaint, type Mode } from "@/lib/colors"
+import { BASEMAP, MAP_TOKENS, categoryRgba, type Mode } from "@/lib/colors"
 import { deadlineLabel } from "@/lib/dates"
 import { DeadlineText } from "@/components/job-atoms"
 import { useCameraPadding, useCamera } from "./camera"
@@ -49,7 +49,6 @@ export type JobMapProps = {
   byId: Map<string, Vacancy>
   selectedId?: string
   hoveredId: string | null
-  layer: "points" | "density"
   globe: boolean
   mode: Mode
   initialCamera: { latitude: number; longitude: number; zoom: number } | null
@@ -63,7 +62,7 @@ const clusterRadius = (n: number) => Math.min(12 + Math.sqrt(n) * 2.6, 34)
 const shortCount = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n))
 
 export const JobMap = memo(function JobMap(props: JobMapProps) {
-  const { points, byId, selectedId, hoveredId, layer, globe, mode, onHover, onSelect, onFocusGroup, onViewChange } =
+  const { points, byId, selectedId, hoveredId, globe, mode, onHover, onSelect, onFocusGroup, onViewChange } =
     props
   const padding = useCameraPadding()
   const camera = useCamera()
@@ -88,6 +87,7 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
     }
     return [...byKey.values()]
   }, [points])
+  const siteOf = useMemo(() => new Map(sites.flatMap((s) => s.ids.map((id) => [id, s] as const))), [sites])
 
   const index = useMemo(() => {
     const sc = new Supercluster<SiteProps, ClusterProps>({
@@ -106,67 +106,71 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
     return sc
   }, [sites])
 
-  const { clusters, pins, stacks } = useMemo(() => {
+  const { clusters, pins, stacks, clusterOf } = useMemo(() => {
     const clusters: ClusterF[] = []
     const pins: Site[] = []
+    const clusterOf = new Map<Site, ClusterF>()
     for (const f of index.getClusters([-180, -85, 180, 85], zoom)) {
-      if ("cluster" in f.properties && f.properties.cluster) clusters.push(f as ClusterF)
-      else pins.push(sites[(f as SiteF).properties.i])
+      if ("cluster" in f.properties && f.properties.cluster) {
+        const c = f as ClusterF
+        clusters.push(c)
+        for (const leaf of index.getLeaves(c.properties.cluster_id, Infinity)) clusterOf.set(sites[leaf.properties.i], c)
+      } else pins.push(sites[(f as SiteF).properties.i])
     }
-    return { clusters, pins, stacks: pins.filter((s) => s.ids.length > 1) }
+    return { clusters, pins, stacks: pins.filter((s) => s.ids.length > 1), clusterOf }
   }, [index, sites, zoom])
-
-  const density = useMemo(
-    () =>
-      layer === "density"
-        ? {
-            type: "FeatureCollection" as const,
-            features: points.map((v) => ({
-              type: "Feature" as const,
-              geometry: { type: "Point" as const, coordinates: [v.lng, v.lat] },
-              properties: {},
-            })),
-          }
-        : null,
-    [layer, points],
-  )
-  // Heat sits under the basemap's first label layer, so place names stay legible on top of it
-  const [labelsId, setLabelsId] = useState<string>()
-  const findLabels = useCallback((m: MaplibreMap) => {
-    setLabelsId(m.getLayersOrder().find((id) => m.getLayer(id)?.type === "symbol"))
-  }, [])
 
   const leafIds = useCallback(
     (clusterId: number, limit: number) => index.getLeaves(clusterId, limit).flatMap((l) => sites[l.properties.i].ids),
     [index, sites],
   )
 
-  const highlighted = useMemo(() => {
-    const out: Array<{ v: Vacancy; selected: boolean }> = []
-    const sel = selectedId ? byId.get(selectedId) : undefined
+  // Hover and selection are drawn as crisp ink rings separated from the mark by a surface gap,
+  // never as translucent washes. A hovered listing inside a cluster rings the cluster instead of
+  // painting a dot over it; the selection always stands on its own pin.
+  const { rings, focus } = useMemo(() => {
+    const rings: Array<{ position: [number, number]; radius: number; width: number }> = []
+    const focus: Array<{ v: Vacancy; radius: number }> = []
     const hov = hoveredId && hoveredId !== selectedId ? byId.get(hoveredId) : undefined
-    if (hov) out.push({ v: hov, selected: false })
-    if (sel) out.push({ v: sel, selected: true })
-    return out
-  }, [byId, selectedId, hoveredId])
+    const sel = selectedId ? byId.get(selectedId) : undefined
+    if (hov) {
+      const site = siteOf.get(hov.id)
+      const cluster = site ? clusterOf.get(site) : undefined
+      if (cluster) {
+        const position = cluster.geometry.coordinates as [number, number]
+        rings.push({ position, radius: clusterRadius(cluster.properties.n) + 5, width: 2 })
+      } else {
+        rings.push({ position: [hov.lng, hov.lat], radius: (site && site.ids.length > 1 ? 8 : 7) + 5, width: 2 })
+      }
+    }
+    if (sel) {
+      focus.push({ v: sel, radius: 8.5 })
+      rings.push({ position: [sel.lng, sel.lat], radius: 14, width: 2.5 })
+    }
+    return { rings, focus }
+  }, [byId, selectedId, hoveredId, siteOf, clusterOf])
 
   const layers = useMemo(() => {
     const surface = tokens.surface
     const highlightLayers = [
-      new ScatterplotLayer<{ v: Vacancy; selected: boolean }>({
-        id: "halo",
-        data: highlighted,
-        getPosition: (d) => [d.v.lng, d.v.lat],
-        getRadius: (d) => (d.selected ? 20 : 14),
+      new ScatterplotLayer<(typeof rings)[number]>({
+        id: "rings",
+        data: rings,
+        getPosition: (d) => d.position,
+        getRadius: (d) => d.radius,
         radiusUnits: "pixels",
-        getFillColor: (d) => categoryRgba(d.v.category, mode, 64),
-        updateTriggers: { getFillColor: mode },
+        filled: false,
+        stroked: true,
+        lineWidthUnits: "pixels",
+        getLineWidth: (d) => d.width,
+        getLineColor: tokens.cluster,
+        updateTriggers: { getLineColor: mode },
       }),
-      new ScatterplotLayer<{ v: Vacancy; selected: boolean }>({
+      new ScatterplotLayer<(typeof focus)[number]>({
         id: "focus",
-        data: highlighted,
+        data: focus,
         getPosition: (d) => [d.v.lng, d.v.lat],
-        getRadius: (d) => (d.selected ? 9 : 7.5),
+        getRadius: (d) => d.radius,
         radiusUnits: "pixels",
         stroked: true,
         lineWidthUnits: "pixels",
@@ -176,27 +180,6 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
         updateTriggers: { getFillColor: mode, getLineColor: mode },
       }),
     ]
-
-    // The density surface itself is a native MapLibre heatmap (below); deck adds points up close
-    if (layer === "density") {
-      return [
-        new ScatterplotLayer<Vacancy>({
-          id: "points",
-          data: zoom >= 5 ? points : [],
-          pickable: true,
-          getPosition: (v) => [v.lng, v.lat],
-          getRadius: 3.5,
-          radiusUnits: "pixels",
-          stroked: true,
-          lineWidthUnits: "pixels",
-          getLineWidth: 1.5,
-          getLineColor: surface,
-          getFillColor: (v) => categoryRgba(v.category, mode),
-          updateTriggers: { getFillColor: mode, getLineColor: mode },
-        }),
-        ...highlightLayers,
-      ]
-    }
 
     return [
       new ScatterplotLayer<ClusterF>({
@@ -241,7 +224,9 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
         getFillColor: (s) => categoryRgba(s.top, mode),
         updateTriggers: { getFillColor: mode, getLineColor: mode },
       }),
-      // Count badge on places holding several positions, in the same ink as clusters
+      ...highlightLayers,
+      // Count badge on places holding several positions, in the same ink as clusters; drawn last
+      // so neither rings nor the selected pin ever cut through a count
       new TextLayer<Site>({
         id: "site-badges",
         data: stacks,
@@ -264,9 +249,8 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
         backgroundBorderRadius: 8,
         updateTriggers: { getColor: mode, getBackgroundColor: mode, getBorderColor: mode },
       }),
-      ...highlightLayers,
     ]
-  }, [layer, points, clusters, pins, stacks, highlighted, mode, tokens, zoom])
+  }, [clusters, pins, stacks, rings, focus, mode, tokens])
 
   const groupTip = useCallback(
     (ids: string[], counts: ClusterProps, where: string | null, hint: string, approx?: boolean) => {
@@ -293,9 +277,8 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
       }
       const { x, y } = info
       const id = info.layer.id
-      const single = id === "points" ? (info.object as Vacancy) : null
       const site = id === "sites" || id === "site-badges" ? (info.object as Site) : null
-      const v = single ?? (site?.ids.length === 1 ? byId.get(site.ids[0]) : undefined)
+      const v = site?.ids.length === 1 ? byId.get(site.ids[0]) : undefined
       if (v) {
         setTip({ kind: "point", v, x, y })
         onHover(v.id)
@@ -318,9 +301,7 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
       if (!info.picked || !info.layer) return
       setTip(null)
       const id = info.layer.id
-      if (id === "points") {
-        onSelect((info.object as Vacancy).id)
-      } else if (id === "sites" || id === "site-badges") {
+      if (id === "sites" || id === "site-badges") {
         // Zooming can't separate positions that share a coordinate, so list them instead
         const s = info.object as Site
         if (s.ids.length === 1) onSelect(s.ids[0])
@@ -386,22 +367,13 @@ export const JobMap = memo(function JobMap(props: JobMapProps) {
         dragRotate={false}
         pitchWithRotate={false}
         touchPitch={false}
-        projection={globe ? "globe" : "mercator"}
+        projection={{ type: globe ? "globe" : "mercator" }}
         attributionControl={{ compact: true }}
         onMove={handleMove}
         onMoveEnd={(e) => emitView(e.target, "originalEvent" in e && !!e.originalEvent)}
-        onLoad={(e) => {
-          findLabels(e.target)
-          emitView(e.target, false)
-        }}
-        onStyleData={(e) => e.target.isStyleLoaded() && findLabels(e.target)}
+        onLoad={(e) => emitView(e.target, false)}
         style={{ position: "absolute", inset: 0 }}
       >
-        {density && (
-          <Source id="density" type="geojson" data={density}>
-            <Layer id="density-heat" type="heatmap" paint={densityPaint(mode)} beforeId={labelsId} />
-          </Source>
-        )}
         <DeckOverlay interleaved layers={layers} onHover={handleHover} onClick={handleClick} pickingRadius={8} />
       </MapGL>
       {tip && <MapTooltip tip={tip} mode={mode} container={containerRef.current} />}
