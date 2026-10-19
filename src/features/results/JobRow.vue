@@ -11,6 +11,9 @@ import { isFresh } from "@/lib/dates"
 
 defineProps<{ v: Vacancy; selected: boolean; hovered: boolean }>()
 const emit = defineEmits<{ select: [id: string]; hover: [id: string | null] }>()
+
+// Only a mouse hovers: the events a browser emulates after a tap would leave the row's pin ringed on the map
+const hover = (e: PointerEvent, id: string | null) => e.pointerType === "mouse" && emit("hover", id)
 </script>
 
 <!-- Card with a stretched primary button, so the save star stays a separate, valid control -->
@@ -18,8 +21,8 @@ const emit = defineEmits<{ select: [id: string]; hover: [id: string | null] }>()
   <article
     class="group relative mx-2 flex gap-3 rounded-xl p-2.5 transition-colors"
     :class="selected ? 'bg-primary/8 ring-1 ring-primary/25' : hovered ? 'bg-elevated' : 'hover:bg-elevated'"
-    @mouseenter="emit('hover', v.id)"
-    @mouseleave="emit('hover', null)"
+    @pointerenter="hover($event, v.id)"
+    @pointerleave="hover($event, null)"
   >
     <button
       type="button"
@@ -34,6 +37,7 @@ const emit = defineEmits<{ select: [id: string]; hover: [id: string | null] }>()
         <h3 class="line-clamp-2 flex-1 text-sm leading-snug font-medium text-highlighted">{{ v.title }}</h3>
         <SaveButton
           :id="v.id"
+          :tooltip="false"
           class="pointer-events-auto relative z-10 -mt-1 -mr-1 size-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 aria-pressed:opacity-100 [@media(hover:none)]:opacity-100"
         />
       </div>

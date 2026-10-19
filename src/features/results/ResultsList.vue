@@ -49,7 +49,13 @@ watch(
     <slot name="empty" />
   </div>
 
-  <div v-else ref="parent" class="scrollbar-thin min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3" data-vaul-no-drag>
+  <!-- In the mobile sheet, pad past the part of the sheet below the screen edge, so the last rows can scroll into view -->
+  <div
+    v-else
+    ref="parent"
+    class="scrollbar-thin min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(var(--sheet-hidden,0px)+env(safe-area-inset-bottom)+12px)]"
+    data-vaul-no-drag
+  >
     <div role="list" aria-label="Positions" class="relative" :style="{ height: `${virtualizer.getTotalSize()}px` }">
       <div
         v-for="item in items"

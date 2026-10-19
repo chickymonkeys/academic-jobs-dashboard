@@ -84,7 +84,10 @@ async function copyLink() {
       </div>
     </div>
 
-    <div class="scrollbar-thin min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-8" data-vaul-no-drag>
+    <div
+      class="scrollbar-thin min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(var(--sheet-hidden,0px)+env(safe-area-inset-bottom)+2rem)]"
+      data-vaul-no-drag
+    >
       <div class="flex items-center gap-3">
         <InstitutionAvatar :v="v" class="size-12" />
         <div class="flex flex-col gap-1 text-xs text-muted">

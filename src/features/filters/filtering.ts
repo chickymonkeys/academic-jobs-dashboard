@@ -128,6 +128,9 @@ export function inBounds(v: Vacancy, b: Bounds | null) {
 
 export type SortKey = NonNullable<AppSearch["sort"]>
 
+/** What the list holds: a picked map group, a picked region, the visible map area, or everything */
+export type Scope = "group" | "region" | "area" | "world" | "everywhere"
+
 export function sortResults(rows: Indexed[], sort: SortKey, terms: string[]) {
   const far = "9999-12-31"
   const cmp: Record<SortKey, (a: Indexed, b: Indexed) => number> = {

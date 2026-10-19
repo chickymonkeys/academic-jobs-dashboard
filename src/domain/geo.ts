@@ -171,6 +171,13 @@ export function regionForPoint(lat: number, lng: number): RegionId {
   return "africa-middle-east"
 }
 
+/** Whether `outer` holds all of `inner`, give or take `slack` degrees on each side */
+export function boundsCover(outer: Bounds, inner: Bounds, slack = 0) {
+  return (
+    outer[0] <= inner[0] + slack && outer[1] <= inner[1] + slack && outer[2] >= inner[2] - slack && outer[3] >= inner[3] - slack
+  )
+}
+
 export function boundsContain(b: Bounds, lng: number, lat: number) {
   const [w, s, e, n] = b
   if (lat < s || lat > n) return false

@@ -5,6 +5,13 @@ import { usePrefersReducedMotion } from "@/lib/media"
 
 export type Padding = { top: number; bottom: number; left: number; right: number }
 
+/**
+ * A move made for the user (zoom buttons, "near me", fit to results, a cluster tap) counts as theirs, like a drag:
+ * it ends a region or group scope. Moves that only follow the UI (a region jump, revealing a selection) keep it.
+ */
+export type MoveOpts = { byUser?: boolean }
+const eventData = (o?: MoveOpts) => (o?.byUser ? { byUser: true } : undefined)
+
 type MapContext = {
   map: ShallowRef<MaplibreMap | null>
   /** How much of the canvas each floating panel covers, so the camera frames the *visible* map */
@@ -40,33 +47,40 @@ export function useCamera({ map, padding }: MapContext) {
   }
   const ms = (d: number) => (reduce.value ? 0 : d)
 
-  const fitBounds = (b: Bounds, maxZoom = 10) =>
+  const fitBounds = (b: Bounds, maxZoom = 10, o?: MoveOpts) =>
     m()?.fitBounds(
       [
         [b[0], b[1]],
         [b[2], b[3]],
       ],
       { padding: safe(), maxZoom, duration: ms(1500), essential: true },
+      eventData(o),
     )
 
-  const flyTo = (lng: number, lat: number, zoom?: number) => {
+  const flyTo = (lng: number, lat: number, zoom?: number, o?: MoveOpts) => {
     const mm = m()
-    mm?.flyTo({
-      center: [lng, lat],
-      zoom: zoom ?? Math.max(mm.getZoom(), 10),
-      padding: safe(),
-      duration: ms(1400),
-      curve: 1.5,
-      essential: true,
-    })
+    mm?.flyTo(
+      {
+        center: [lng, lat],
+        zoom: zoom ?? Math.max(mm.getZoom(), 10),
+        padding: safe(),
+        duration: ms(1400),
+        curve: 1.5,
+        essential: true,
+      },
+      eventData(o),
+    )
   }
 
-  const easeTo = (lng: number, lat: number, zoom?: number) => {
+  const easeTo = (lng: number, lat: number, zoom?: number, o?: MoveOpts) => {
     const mm = m()
-    mm?.easeTo({ center: [lng, lat], zoom: zoom ?? mm.getZoom(), padding: safe(), duration: ms(700), essential: true })
+    mm?.easeTo(
+      { center: [lng, lat], zoom: zoom ?? mm.getZoom(), padding: safe(), duration: ms(700), essential: true },
+      eventData(o),
+    )
   }
 
-  const fitPoints = (pts: Array<{ lat: number; lng: number }>, maxZoom = 11) => {
+  const fitPoints = (pts: Array<{ lat: number; lng: number }>, maxZoom = 11, o?: MoveOpts) => {
     if (!pts.length) return
     let [w, s, e, n] = [180, 90, -180, -90]
     for (const p of pts) {
@@ -75,8 +89,8 @@ export function useCamera({ map, padding }: MapContext) {
       s = Math.min(s, p.lat)
       n = Math.max(n, p.lat)
     }
-    if (e - w < 0.02 && n - s < 0.02) return flyTo(pts[0]!.lng, pts[0]!.lat, Math.min(maxZoom, 12))
-    fitBounds([w, s, e, n], maxZoom)
+    if (e - w < 0.02 && n - s < 0.02) return flyTo(pts[0]!.lng, pts[0]!.lat, Math.min(maxZoom, 12), o)
+    fitBounds([w, s, e, n], maxZoom, o)
   }
 
   /** Gently pan only if the point is hidden behind a panel or off-screen */
@@ -98,10 +112,12 @@ export function useCamera({ map, padding }: MapContext) {
     reveal,
     zoomBy: (delta: number) => {
       const mm = m()
-      mm?.easeTo({ zoom: mm.getZoom() + delta, duration: ms(300) })
+      mm?.easeTo({ zoom: mm.getZoom() + delta, duration: ms(300) }, eventData({ byUser: true }))
     },
     reset: () => fitBounds(WORLD_BOUNDS, 3),
     getZoom: () => m()?.getZoom() ?? 0,
+    /** The padding moves actually use, i.e. what the panels leave of the map */
+    padding: safe,
   }
 }
 export type Camera = ReturnType<typeof useCamera>

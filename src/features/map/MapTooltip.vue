@@ -11,7 +11,10 @@ const position = computed(() => {
   const w = props.container?.clientWidth ?? 1000
   const h = props.container?.clientHeight ?? 800
   const { x, y } = props.tip
-  return { left: `${x > w - 300 ? x - 284 : x + 16}px`, top: `${y > h - 200 ? y - 150 : y + 16}px` }
+  // Flip to the side with room, then keep the card on screen however small the window
+  const left = Math.max(8, Math.min(x > w - 300 ? x - 284 : x + 16, w - 276))
+  const top = Math.max(8, y > h - 200 ? y - 150 : y + 16)
+  return { left: `${left}px`, top: `${top}px` }
 })
 const parts = computed(() => {
   const t = props.tip
