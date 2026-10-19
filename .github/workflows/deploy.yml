@@ -1,20 +1,25 @@
-# Builds the app and deploys it to Cloudflare Workers with Void. The first deploy creates the Worker
-# (and anything else the code needs); later deploys update it in place. Also called by ingest.yml
-# after a data refresh, because commits pushed with GITHUB_TOKEN don't trigger `push` workflows.
+# Fetches EJM and JOE, builds the app and deploys it to Cloudflare Workers with Void: on every push
+# to main and every 3 hours. The snapshot (public/data) is never committed; it lives only in the
+# deployed site. Open tabs pick up a new one within META_POLL_MS because the client polls
+# /data/meta.json for a new version.
 #
-# Setup (once): repository secret CLOUDFLARE_API_TOKEN (Workers Scripts: Edit), plus repository
-# variables CLOUDFLARE_ACCOUNT_ID if the token can reach several accounts and
-# CLOUDFLARE_WORKERS_SUBDOMAIN (your <name>.workers.dev). Commit void.lock.json after the first deploy.
+# Only pipeline state without personal data is committed back: data/seen.json (first-seen dates,
+# the "new" signal) and data/geocache.json (institution coordinates).
+#
+# Setup (once): repository secret CLOUDFLARE_API_TOKEN (Edit Cloudflare Workers template) and
+# repository variable CLOUDFLARE_WORKERS_SUBDOMAIN (your <name>.workers.dev). The account comes
+# from void.lock.json; set CLOUDFLARE_ACCOUNT_ID only to deploy somewhere else.
 name: deploy
 on:
   push:
     branches: [main]
+  schedule: [{ cron: "17 */3 * * *" }]
   workflow_dispatch: {}
-  workflow_call: {}
 concurrency:
   group: deploy-${{ github.repository }}
-  cancel-in-progress: true
-permissions: { contents: read }
+  # Queue instead of cancelling, so a run never dies between committing state and deploying
+  cancel-in-progress: false
+permissions: { contents: write }
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -24,13 +29,29 @@ jobs:
       CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}
     steps:
       - uses: actions/checkout@v6
-        with:
-          # When called after an ingest commit, deploy the branch tip (the new snapshot), not the triggering SHA
-          ref: ${{ github.event_name == 'push' && github.sha || github.ref }}
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # Last good upstream payloads: a feed that is down falls back to its previous copy instead of vanishing
+      - uses: actions/cache@v6
+        with:
+          path: data/raw
+          key: ingest-raw-${{ github.run_id }}
+          restore-keys: ingest-raw-
+      - run: pnpm ingest --geocode-budget=300
+      - name: Refuse an empty snapshot
+        run: jq -e '.total > 0' public/data/meta.json
+      - name: Commit pipeline state if it changed
+        run: |
+          git config user.name "ingest-bot"
+          git config user.email "ingest-bot@users.noreply.github.com"
+          git add data/geocache.json data/seen.json
+          if ! git diff --cached --quiet; then
+            git commit -m "data: update ingest state $(date -u +%FT%TZ)"
+            git pull --rebase
+            git push
+          fi
       # `void deploy` runs `pnpm run build` (vite build, then vue-tsc), so a type error stops the deploy
       - name: Deploy
         if: env.CLOUDFLARE_API_TOKEN != ''

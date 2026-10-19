@@ -1,7 +1,6 @@
 # Econ Job Atlas
 
 [![deploy](https://github.com/chickymonkeys/academic-jobs-dashboard/actions/workflows/deploy.yml/badge.svg)](https://github.com/chickymonkeys/academic-jobs-dashboard/actions/workflows/deploy.yml)
-[![ingest](https://github.com/chickymonkeys/academic-jobs-dashboard/actions/workflows/ingest.yml/badge.svg)](https://github.com/chickymonkeys/academic-jobs-dashboard/actions/workflows/ingest.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A map-first dashboard of academic economics vacancies, aggregated live from **EconJobMarket (EJM)** and the **AEA's Job Openings for Economists (JOE)**.
@@ -14,7 +13,7 @@ Needs Node 24 and pnpm (`corepack enable` picks up the version pinned in `packag
 git clone https://github.com/chickymonkeys/academic-jobs-dashboard.git
 cd academic-jobs-dashboard
 pnpm install
-pnpm ingest                  # fetch EJM + JOE → geocode → dedupe → public/data/
+pnpm ingest                  # fetch EJM + JOE → geocode → dedupe → public/data/ (gitignored)
 pnpm dev                     # http://localhost:5173, on Cloudflare's local Workers runtime
 pnpm build && pnpm preview   # production build (vite build, then vue-tsc)
 pnpm run deploy:cloudflare   # build and deploy to your Cloudflare account
@@ -68,7 +67,7 @@ UI is Nuxt UI in plain Vue mode (`@nuxt/ui/vite`): components (`UButton`, `UPopo
 
 **Adding a source** (e.g. AJO, EconJobs, university feeds): implement `SourceAdapter`, map it onto `Vacancy`, then register it in `scripts/ingest.ts`. Order sets dedupe priority. Category and field normalization live in `src/domain/taxonomy.ts` (JEL letters as the shared field vocabulary).
 
-**Continuous updates:** `.github/workflows/ingest.yml` runs the pipeline every 3 hours, commits a new snapshot, and redeploys. `data/geocache.json` and `data/seen.json` are committed state: the geocode cache keeps reruns fast and polite to Nominatim, and first-seen dates give JOE (which publishes no post date) a "new" signal.
+**Continuous updates:** `.github/workflows/deploy.yml` runs the pipeline on every push to `main` and every 3 hours, then deploys. The snapshot is never committed: it holds third-party listings, many with named contacts, so it lives only in the deployed site. Raw feed payloads stay in the Actions cache, so a feed that is down falls back to its last good copy. `data/geocache.json` and `data/seen.json` are committed state: the geocode cache keeps reruns fast and polite to Nominatim, and first-seen dates give JOE (which publishes no post date) a "new" signal.
 
 **Scaling headroom:** deck.gl and Supercluster handle 10⁵ points. The list and table are virtualized. Search uses a per-snapshot precomputed index. Past roughly 50k listings, move `applyFilters` into a Web Worker and split the index by region, or serve it from an API with the same shapes.
 
@@ -78,18 +77,17 @@ UI is Nuxt UI in plain Vue mode (`@nuxt/ui/vite`): components (`UButton`, `UPopo
 
 1. **Create a free account** at [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) and verify the email.
 2. **Choose a workers.dev subdomain:** open **Workers & Pages** in the dashboard once and pick a name, say `econ-atlas`. Void can't deploy to an account without one.
-3. **First deploy, from your machine:** `pnpm run deploy:cloudflare`. The browser opens to sign in to Cloudflare. Void builds the app, creates a Worker named after `package.json`'s `name`, uploads `dist/client` (app + `data/`) to Workers Static Assets, and prints the URL: `https://academic-jobs-dashboard.<subdomain>.workers.dev`. Later runs update the same Worker.
-4. **Commit `void.lock.json`** if the deploy changed it. It records the resources Void provisioned, so other machines and CI deploy to the same place.
+3. **First deploy, from your machine:** `pnpm ingest`, then `pnpm run deploy:cloudflare`. The browser opens to sign in to Cloudflare. Void builds the app, creates a Worker named after `package.json`'s `name`, uploads `dist/client` (app + `data/`) to Workers Static Assets, and prints the URL: `https://academic-jobs-dashboard.<subdomain>.workers.dev`. Later runs update the same Worker. A deploy from your machine ships your local snapshot, until CI replaces it at its next run.
+4. **Commit `void.lock.json`** if the deploy changed it. It records your account ID and the resources Void provisioned, so other machines and CI deploy to the same place.
 5. **Deploy from GitHub Actions (optional):** in the dashboard, go to **My Profile → API Tokens → Create Token** and use the **Edit Cloudflare Workers** template, limited to your account. Then store it, with your subdomain, in the repository:
 
    ```bash
    gh secret set CLOUDFLARE_API_TOKEN                          # paste the token when prompted
    gh variable set CLOUDFLARE_WORKERS_SUBDOMAIN --body econ-atlas
-   gh variable set CLOUDFLARE_ACCOUNT_ID --body <account-id>   # only if the token reaches several accounts
    gh workflow run deploy                                      # first CI deploy
    ```
 
-   From then on, `.github/workflows/deploy.yml` deploys every push to `main`, and the ingest workflow redeploys after each data refresh. Without the token, the workflow only builds and type-checks.
+   From then on, `.github/workflows/deploy.yml` fetches fresh listings and deploys on every push to `main` and every 3 hours. Without the token, it still runs the pipeline, but only builds and type-checks.
 
 **What the free plan covers:** the app is a static SPA on Workers Static Assets. The edge serves it, along with the snapshot under `/data/`, without running Worker code, and asset requests are free and unmetered. The Worker only answers Void's own `/__void` endpoints, well inside the 100,000 requests a day of Workers Free. One limit to watch is 20,000 files per deploy on Free; each listing adds one `data/details/*.json`, and there are about 750 today.
 
@@ -106,6 +104,6 @@ UI is Nuxt UI in plain Vue mode (`@nuxt/ui/vite`): components (`UButton`, `UPopo
 
 The code is [MIT](LICENSE). The license doesn't cover the data:
 
-- Listings under `public/data/` belong to their publishers (EconJobMarket, AEA JOE) and are mirrored only to point back to the original postings.
+- The listings the site serves (generated into `public/data/`, which is never committed) belong to their publishers (EconJobMarket, AEA JOE) and are shown only to point back to the original postings.
 - `data/geocache.json` holds Nominatim geocodes, © OpenStreetMap contributors, under the [ODbL](https://opendatacommons.org/licenses/odbl/).
 - Basemaps are © [CARTO](https://carto.com/attributions) and © OpenStreetMap contributors.

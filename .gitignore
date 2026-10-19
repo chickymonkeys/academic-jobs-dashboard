@@ -17,8 +17,10 @@ dist-ssr/
 *.tsbuildinfo
 coverage/
 
-# Ingest scratch: raw upstream payloads and run logs.
-# data/geocache.json and data/seen.json ARE committed: they are pipeline state.
+# Ingest output and scratch: the snapshot (it holds third-party listings with contact details, and lives
+# only in the deployed site), raw upstream payloads and run logs.
+# data/geocache.json and data/seen.json ARE committed: they are pipeline state, with no personal data.
+public/data/
 data/raw/
 data/*.log
 
