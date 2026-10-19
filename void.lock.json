@@ -2,7 +2,8 @@
   "version": 1,
   "source": {},
   "resolved": {
-    "compatibility_date": "2026-02-24"
+    "compatibility_date": "2026-02-24",
+    "account_id": "158c0c9aa153efa4833143961f1163c5"
   },
-  "text": "{\n  \"compatibility_date\": \"2026-02-24\"\n}\n"
+  "text": "{\n  \"compatibility_date\": \"2026-02-24\",\n  \"account_id\": \"158c0c9aa153efa4833143961f1163c5\"\n}\n"
 }
