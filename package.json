@@ -2,6 +2,13 @@
   "name": "academic-jobs-dashboard",
   "private": true,
   "version": "0.1.0",
+  "description": "Map-first dashboard of academic economics vacancies from EconJobMarket and AEA JOE",
+  "license": "MIT",
+  "author": "Alessandro Pizzigolotto",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chickymonkeys/academic-jobs-dashboard.git"
+  },
   "type": "module",
   "packageManager": "pnpm@12.14.0",
   "scripts": {

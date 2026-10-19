@@ -1,11 +1,18 @@
 # Econ Job Atlas
 
+[![deploy](https://github.com/chickymonkeys/academic-jobs-dashboard/actions/workflows/deploy.yml/badge.svg)](https://github.com/chickymonkeys/academic-jobs-dashboard/actions/workflows/deploy.yml)
+[![ingest](https://github.com/chickymonkeys/academic-jobs-dashboard/actions/workflows/ingest.yml/badge.svg)](https://github.com/chickymonkeys/academic-jobs-dashboard/actions/workflows/ingest.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A map-first dashboard of academic economics vacancies, aggregated live from **EconJobMarket (EJM)** and the **AEA's Job Openings for Economists (JOE)**.
 
 Stack: Vue 3 · TypeScript · Vite · **Nuxt UI** (Tailwind v4, Reka UI) · **MapLibre GL** (CARTO basemaps) · **deck.gl** (interleaved) · **TanStack Query / Virtual** · Vue Router · Zod · **Void** → Cloudflare Workers.
 
+Needs Node 24 and pnpm (`corepack enable` picks up the version pinned in `package.json`).
+
 ```bash
+git clone https://github.com/chickymonkeys/academic-jobs-dashboard.git
+cd academic-jobs-dashboard
 pnpm install
 pnpm ingest                  # fetch EJM + JOE → geocode → dedupe → public/data/
 pnpm dev                     # http://localhost:5173, on Cloudflare's local Workers runtime
@@ -67,13 +74,24 @@ UI is Nuxt UI in plain Vue mode (`@nuxt/ui/vite`): components (`UButton`, `UPopo
 
 ## Hosting (Cloudflare, provisioned by Void)
 
-[Void](https://void.cloud) builds the app and deploys it to Cloudflare Workers, creating what it needs on the first run. There is nothing to set up in the Cloudflare dashboard.
+[Void](https://void.cloud) builds the app and deploys it to Cloudflare Workers, creating the Worker on the first run. A free Cloudflare account is enough; the only dashboard step is choosing a workers.dev subdomain.
 
-1. **First deploy, from your machine:** `pnpm run deploy:cloudflare`. The browser opens to sign in to Cloudflare and pick an account. Void creates the Worker, uploads `dist/client` (app + `data/`) to Workers Static Assets, and prints the `*.workers.dev` URL. Later runs update the same Worker.
-2. **Commit `void.lock.json`** afterwards. It records the account and resources, so other machines and CI deploy to the same Worker.
-3. **CI (optional):** add a repository secret `CLOUDFLARE_API_TOKEN` (Workers Scripts: Edit), and the variables `CLOUDFLARE_WORKERS_SUBDOMAIN` and, if the token reaches several accounts, `CLOUDFLARE_ACCOUNT_ID`. Then `.github/workflows/deploy.yml` deploys every push to `main`, and the ingest workflow redeploys after each data refresh. Without the token, the workflow only builds and type-checks.
+1. **Create a free account** at [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) and verify the email.
+2. **Choose a workers.dev subdomain:** open **Workers & Pages** in the dashboard once and pick a name, say `econ-atlas`. Void can't deploy to an account without one.
+3. **First deploy, from your machine:** `pnpm run deploy:cloudflare`. The browser opens to sign in to Cloudflare. Void builds the app, creates a Worker named after `package.json`'s `name`, uploads `dist/client` (app + `data/`) to Workers Static Assets, and prints the URL: `https://academic-jobs-dashboard.<subdomain>.workers.dev`. Later runs update the same Worker.
+4. **Commit `void.lock.json`** if the deploy changed it. It records the resources Void provisioned, so other machines and CI deploy to the same place.
+5. **Deploy from GitHub Actions (optional):** in the dashboard, go to **My Profile → API Tokens → Create Token** and use the **Edit Cloudflare Workers** template, limited to your account. Then store it, with your subdomain, in the repository:
 
-The app is a static SPA on Workers Static Assets. The edge serves it, along with the snapshot under `/data/`, without running Worker code, which is free on Workers Free. The Worker only answers Void's own `/__void` endpoints.
+   ```bash
+   gh secret set CLOUDFLARE_API_TOKEN                          # paste the token when prompted
+   gh variable set CLOUDFLARE_WORKERS_SUBDOMAIN --body econ-atlas
+   gh variable set CLOUDFLARE_ACCOUNT_ID --body <account-id>   # only if the token reaches several accounts
+   gh workflow run deploy                                      # first CI deploy
+   ```
+
+   From then on, `.github/workflows/deploy.yml` deploys every push to `main`, and the ingest workflow redeploys after each data refresh. Without the token, the workflow only builds and type-checks.
+
+**What the free plan covers:** the app is a static SPA on Workers Static Assets. The edge serves it, along with the snapshot under `/data/`, without running Worker code, and asset requests are free and unmetered. The Worker only answers Void's own `/__void` endpoints, well inside the 100,000 requests a day of Workers Free. One limit to watch is 20,000 files per deploy on Free; each listing adds one `data/details/*.json`, and there are about 750 today.
 
 **Growing a backend:** put API routes in `routes/`, scheduled jobs in `crons/`, a Drizzle schema in `db/`, then drop `inference` from `void.config.ts`. Void infers the D1, KV and R2 bindings from the code and provisions them on the next deploy. One caveat if the ingest moves into a cron: parsing both feeds takes about 75 ms of CPU, more than Workers Free allows per invocation (10 ms), so that needs Workers Paid.
 
@@ -83,3 +101,11 @@ The app is a static SPA on Workers Static Assets. The edge serves it, along with
 - TypeScript stays on 6.x: `vue-tsc` needs the TypeScript JS API, which the native TypeScript 7 doesn't ship. `pnpm typecheck` reads the `components.d.ts` and `auto-imports.d.ts` that `pnpm dev` or `pnpm build` generate.
 - Some EJM logo URLs are served with a non-image content type, and browsers block them cross-origin (ORB). Avatars fall back to initials.
 - Listings are aggregated for discovery. The detail panel always links to the original posting.
+
+## License
+
+The code is [MIT](LICENSE). The license doesn't cover the data:
+
+- Listings under `public/data/` belong to their publishers (EconJobMarket, AEA JOE) and are mirrored only to point back to the original postings.
+- `data/geocache.json` holds Nominatim geocodes, © OpenStreetMap contributors, under the [ODbL](https://opendatacommons.org/licenses/odbl/).
+- Basemaps are © [CARTO](https://carto.com/attributions) and © OpenStreetMap contributors.
