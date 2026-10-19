@@ -1,0 +1,42 @@
+# Builds the app and deploys it to Cloudflare Workers with Void. The first deploy creates the Worker
+# (and anything else the code needs); later deploys update it in place. Also called by ingest.yml
+# after a data refresh, because commits pushed with GITHUB_TOKEN don't trigger `push` workflows.
+#
+# Setup (once): repository secret CLOUDFLARE_API_TOKEN (Workers Scripts: Edit), plus repository
+# variables CLOUDFLARE_ACCOUNT_ID if the token can reach several accounts and
+# CLOUDFLARE_WORKERS_SUBDOMAIN (your <name>.workers.dev). Commit void.lock.json after the first deploy.
+name: deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+  workflow_call: {}
+concurrency:
+  group: deploy-${{ github.repository }}
+  cancel-in-progress: true
+permissions: { contents: read }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # When called after an ingest commit, deploy the branch tip (the new snapshot), not the triggering SHA
+          ref: ${{ github.event_name == 'push' && github.sha || github.ref }}
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # `void deploy` runs `pnpm run build` (vite build, then vue-tsc), so a type error stops the deploy
+      - name: Deploy
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: pnpm exec void deploy --platform cloudflare
+      - name: Build only (no Cloudflare token yet)
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: |
+          pnpm build
+          echo "::notice::CLOUDFLARE_API_TOKEN is not set; built and type-checked, but skipped the deploy."

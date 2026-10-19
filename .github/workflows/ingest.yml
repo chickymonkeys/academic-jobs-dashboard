@@ -1,6 +1,5 @@
-# Refreshes listings from EJM and JOE on a schedule and commits the new snapshot.
-# Any static host (Pages, Netlify, Vercel, S3+CDN) redeploys from the commit; open tabs pick it up
-# within META_POLL_MS because the client polls public/data/meta.json for a new version.
+# Refreshes listings from EJM and JOE on a schedule, commits the new snapshot, and redeploys.
+# Open tabs pick it up within META_POLL_MS because the client polls /data/meta.json for a new version.
 name: ingest
 on:
   schedule: [{ cron: "17 */3 * * *" }]
@@ -9,16 +8,30 @@ permissions: { contents: write }
 jobs:
   ingest:
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm ingest --geocode-budget=300
       - name: Commit snapshot if it changed
+        id: commit
         run: |
           git config user.name "ingest-bot"
           git config user.email "ingest-bot@users.noreply.github.com"
           git add public/data data/geocache.json data/seen.json
-          git diff --cached --quiet || git commit -m "data: refresh listings $(date -u +%FT%TZ)" && git push
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "data: refresh listings $(date -u +%FT%TZ)"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+  deploy:
+    needs: ingest
+    if: needs.ingest.outputs.changed == 'true'
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit

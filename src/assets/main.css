@@ -1,0 +1,132 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+@theme {
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/*
+ * Nuxt UI semantic tokens, tuned to the atlas palette: cool, low-chroma neutrals around hue 262,
+ * so panels, text and borders stay quiet and hue on the map only ever means position type.
+ */
+:root {
+  --ui-primary: oklch(0.49 0.16 264);
+  --ui-radius: 0.25rem;
+
+  --ui-text-dimmed: oklch(0.62 0.014 262);
+  --ui-text-muted: oklch(0.5 0.018 262);
+  --ui-text-toned: oklch(0.36 0.018 262);
+  --ui-text: oklch(0.21 0.016 262);
+  --ui-text-highlighted: oklch(0.21 0.016 262);
+  --ui-text-inverted: oklch(0.985 0.003 250);
+
+  --ui-bg: oklch(1 0 0);
+  --ui-bg-muted: oklch(0.975 0.004 262);
+  --ui-bg-elevated: oklch(0.958 0.005 262);
+  --ui-bg-accented: oklch(0.92 0.007 262);
+  --ui-border: oklch(0.905 0.007 262);
+  --ui-border-muted: oklch(0.93 0.006 262);
+  --ui-border-accented: oklch(0.86 0.008 262);
+
+  /* The map canvas sits on this; floating panels use --ui-bg */
+  --app-bg: oklch(0.982 0.003 250);
+  /* Floating surfaces over the map: opaque, so map marks never ghost through as smudges */
+  --glass-border: oklch(0.2 0.02 262 / 0.08);
+  --shadow-float: 0 1px 2px oklch(0.2 0.02 262 / 0.06), 0 8px 24px -6px oklch(0.2 0.02 262 / 0.14);
+  --urgent: oklch(0.58 0.2 28);
+  --soon: oklch(0.66 0.15 65);
+  --ok: oklch(0.58 0.13 155);
+}
+
+.dark {
+  --ui-primary: oklch(0.72 0.13 264);
+
+  --ui-text-dimmed: oklch(0.56 0.014 262);
+  --ui-text-muted: oklch(0.7 0.015 262);
+  --ui-text-toned: oklch(0.84 0.01 262);
+  --ui-text: oklch(0.95 0.005 262);
+  --ui-text-highlighted: oklch(0.95 0.005 262);
+  --ui-text-inverted: oklch(0.18 0.03 264);
+
+  --ui-bg: oklch(0.21 0.014 262);
+  --ui-bg-muted: oklch(0.235 0.013 262);
+  --ui-bg-elevated: oklch(0.26 0.012 262);
+  --ui-bg-accented: oklch(0.3 0.014 262);
+  --ui-border: oklch(1 0 0 / 0.1);
+  --ui-border-muted: oklch(1 0 0 / 0.07);
+  --ui-border-accented: oklch(1 0 0 / 0.16);
+
+  --app-bg: oklch(0.17 0.012 262);
+  --glass-border: oklch(1 0 0 / 0.09);
+  --shadow-float: 0 1px 2px oklch(0 0 0 / 0.3), 0 10px 30px -8px oklch(0 0 0 / 0.55);
+  --urgent: oklch(0.7 0.17 28);
+  --soon: oklch(0.78 0.14 75);
+  --ok: oklch(0.72 0.13 155);
+}
+
+@theme inline {
+  --color-urgent: var(--urgent);
+  --color-soon: var(--soon);
+  --color-ok: var(--ok);
+}
+
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+  body {
+    background: var(--app-bg);
+    color: var(--ui-text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv11", "ss01";
+    overscroll-behavior: none;
+  }
+}
+
+@layer components {
+  /* Floating panel over the map: solid surface, hairline border, soft elevation */
+  .surface-float {
+    background: var(--ui-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-float);
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--ui-text-muted) 35%, transparent) transparent;
+  }
+  .prose-job {
+    @apply text-sm leading-relaxed text-toned;
+  }
+  .prose-job p,
+  .prose-job ul,
+  .prose-job ol {
+    @apply mb-3;
+  }
+  .prose-job ul {
+    @apply list-disc pl-5;
+  }
+  .prose-job ol {
+    @apply list-decimal pl-5;
+  }
+  .prose-job h4 {
+    @apply mt-4 mb-2 font-semibold text-highlighted;
+  }
+}
+
+/* MapLibre chrome tuned to the design system */
+.maplibregl-ctrl-attrib {
+  @apply !bg-transparent text-[10px] !text-muted;
+}
+.maplibregl-ctrl-attrib a {
+  @apply !text-muted;
+}
+.maplibregl-ctrl-attrib-button {
+  @apply !bg-transparent;
+}
+.dark .maplibregl-ctrl-attrib-button {
+  filter: invert(1);
+}

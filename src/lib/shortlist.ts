@@ -1,9 +1,7 @@
-import { useSyncExternalStore } from "react"
+import { readonly, shallowRef } from "vue"
 
 /** Saved positions, per browser. Storage access is guarded: private mode or blocked storage degrades to in-memory. */
 const KEY = "ajd.shortlist.v1"
-const listeners = new Set<() => void>()
-let ids: ReadonlySet<string> = load()
 
 function load(): ReadonlySet<string> {
   try {
@@ -14,30 +12,19 @@ function load(): ReadonlySet<string> {
   }
 }
 
-function commit(next: Set<string>) {
-  ids = next
+const ids = shallowRef<ReadonlySet<string>>(load())
+
+export function toggleSaved(id: string) {
+  const next = new Set(ids.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  ids.value = next
   try {
     localStorage.setItem(KEY, JSON.stringify([...next]))
   } catch {
     /* in-memory only */
   }
-  listeners.forEach((l) => l())
-}
-
-export function toggleSaved(id: string) {
-  const next = new Set(ids)
-  if (next.has(id)) next.delete(id)
-  else next.add(id)
-  commit(next)
   return next.has(id)
 }
 
-export function useShortlist() {
-  return useSyncExternalStore(
-    (cb) => {
-      listeners.add(cb)
-      return () => listeners.delete(cb)
-    },
-    () => ids,
-  )
-}
+export const useShortlist = () => readonly(ids)

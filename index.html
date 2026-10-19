@@ -13,15 +13,22 @@
     <link rel="preconnect" href="https://basemaps.cartocdn.com" crossorigin />
     <title>Econ Job Atlas</title>
     <script>
+      // Apply the theme before first paint. Key and values match VueUse's color mode, which Nuxt UI
+      // uses; a preference saved by the previous build ("ajd.theme") carries over once.
       try {
-        var t = localStorage.getItem("ajd.theme")
+        var key = "vueuse-color-scheme"
+        var t = localStorage.getItem(key)
+        if (t == null) {
+          var legacy = localStorage.getItem("ajd.theme")
+          if (legacy === "light" || legacy === "dark") localStorage.setItem(key, (t = legacy))
+        }
         if (t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches))
           document.documentElement.classList.add("dark")
       } catch (e) {}
     </script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div id="app" class="isolate"></div>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -1,2 +1,5 @@
 allowBuilds:
   esbuild: true
+  # Cloudflare's local runtime, used by Void's dev server (Miniflare)
+  workerd: true
+  vue-demi: true

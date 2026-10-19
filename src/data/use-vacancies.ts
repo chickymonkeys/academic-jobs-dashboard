@@ -1,45 +1,50 @@
-import { useEffect, useMemo, useRef } from "react"
-import { useQuery } from "@tanstack/react-query"
-import { toast } from "sonner"
+import { computed, watch } from "vue"
+import { useToast } from "@nuxt/ui/composables"
 import type { Vacancy } from "@/domain/vacancy"
-import { metaQuery, snapshotQuery } from "./api"
+import { useMeta, useSnapshot } from "./api"
+
+const EMPTY: Vacancy[] = []
 
 /**
  * Live vacancies: polls meta, swaps in the new snapshot when its version changes,
  * and announces genuinely new listings instead of silently reshuffling the list.
  */
 export function useVacancies(onShowNew?: () => void) {
-  const meta = useQuery(metaQuery)
-  const snapshot = useQuery(snapshotQuery(meta.data?.version))
-  const items = snapshot.data?.items
-  const previous = useRef<Set<string> | null>(null)
+  const toast = useToast()
+  const meta = useMeta()
+  const version = computed(() => meta.data.value?.version)
+  const snapshot = useSnapshot(version)
+  const items = computed(() => snapshot.data.value?.items ?? EMPTY)
 
-  useEffect(() => {
-    if (!items) return
-    const ids = new Set(items.map((v) => v.id))
-    const prev = previous.current
-    previous.current = ids
-    if (!prev) return
-    const added = items.filter((v) => !prev.has(v.id)).length
-    if (added > 0) {
-      toast(`${added} new position${added === 1 ? "" : "s"} just posted`, {
-        description: "Listings refresh automatically from EJM and JOE.",
-        action: onShowNew ? { label: "Show", onClick: onShowNew } : undefined,
-      })
-    }
-  }, [items, onShowNew])
+  let previous: Set<string> | null = null
+  watch(
+    () => snapshot.data.value?.items,
+    (next) => {
+      if (!next) return
+      const prev = previous
+      previous = new Set(next.map((v) => v.id))
+      if (!prev) return
+      const added = next.filter((v) => !prev.has(v.id)).length
+      if (added > 0) {
+        toast.add({
+          title: `${added} new position${added === 1 ? "" : "s"} just posted`,
+          description: "Listings refresh automatically from EJM and JOE.",
+          icon: "i-lucide-sparkles",
+          actions: onShowNew ? [{ label: "Show", color: "neutral", variant: "outline", onClick: onShowNew }] : undefined,
+        })
+      }
+    },
+  )
 
-  const byId = useMemo(() => new Map<string, Vacancy>((items ?? []).map((v) => [v.id, v])), [items])
+  const byId = computed(() => new Map<string, Vacancy>(items.value.map((v) => [v.id, v])))
 
   return {
-    items: items ?? EMPTY,
+    items,
     byId,
-    meta: meta.data,
-    version: meta.data?.version,
-    isLoading: meta.isLoading || (snapshot.isLoading && !snapshot.data),
-    error: meta.error ?? snapshot.error,
-    isRefreshing: snapshot.isFetching && !!snapshot.data,
+    meta: computed(() => meta.data.value),
+    version,
+    isLoading: computed(() => meta.isLoading.value || (snapshot.isLoading.value && !snapshot.data.value)),
+    error: computed(() => meta.error.value ?? snapshot.error.value),
+    isRefreshing: computed(() => snapshot.isFetching.value && !!snapshot.data.value),
   }
 }
-
-const EMPTY: Vacancy[] = []
