@@ -9,7 +9,7 @@ const DEADLINES = [
   { value: "any", label: "Any deadline" },
   { value: "week", label: "Closing within 7 days" },
   { value: "month", label: "Closing within 30 days" },
-  { value: "none", label: "Open until filled" },
+  { value: "none", label: "Rolling or no date" },
 ] as const
 
 const active = computed(() => !!props.search.dl || !!props.search.closed)

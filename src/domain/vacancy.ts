@@ -42,6 +42,14 @@ export type RegionId = z.infer<typeof RegionIdSchema>
 export const GeoPrecisionSchema = z.enum(["exact", "city", "country"])
 export type GeoPrecision = z.infer<typeof GeoPrecisionSchema>
 
+/**
+ * What the `deadline` date is: when review of applications begins, the date for full (or priority)
+ * consideration, or a hard deadline. Postings often name an earlier one of these in their text than the
+ * date a board files them under.
+ */
+export const DeadlineKindSchema = z.enum(["review", "priority", "deadline"])
+export type DeadlineKind = z.infer<typeof DeadlineKindSchema>
+
 export const VacancySchema = z.object({
   id: z.string(),
   source: SourceIdSchema,
@@ -67,7 +75,13 @@ export const VacancySchema = z.object({
   geoPrecision: GeoPrecisionSchema,
   /** YYYY-MM-DD; null when the source does not expose it and the listing predates our first crawl */
   postedAt: z.string().nullable(),
+  /** YYYY-MM-DD: the date to apply by, the earliest the posting gives (see DeadlineKind); null when none is stated */
   deadline: z.string().nullable(),
+  deadlineKind: DeadlineKindSchema.nullable().default(null),
+  /** YYYY-MM-DD: a later date until which applications are still taken, when the posting gives one */
+  closesAt: z.string().nullable().default(null),
+  /** Applications are taken on a rolling basis or until the position is filled */
+  rolling: z.boolean().default(false),
   firstSeenAt: z.string(),
   summary: z.string(),
   logoUrl: z.string().nullable(),

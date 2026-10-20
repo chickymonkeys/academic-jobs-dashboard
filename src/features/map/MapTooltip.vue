@@ -32,7 +32,7 @@ const parts = computed(() => {
       <div class="line-clamp-2 text-[13px] leading-snug font-medium text-highlighted">{{ tip.v.title }}</div>
       <div class="mt-0.5 truncate text-muted">{{ tip.v.institution }}</div>
       <div class="mt-2 flex items-center justify-between">
-        <DeadlineText :deadline="tip.v.deadline" />
+        <DeadlineText :v="tip.v" />
         <span class="text-muted">Click for details</span>
       </div>
     </template>
@@ -61,7 +61,9 @@ const parts = computed(() => {
           {{ tip.names.slice(0, 3).join(" · ") }}{{ tip.names.length > 3 ? ` +${tip.names.length - 3} more` : "" }}
         </span>
       </div>
-      <div v-if="tip.approx" class="mt-2 text-[11px] text-muted">Pinned to the city, not the exact address</div>
+      <div v-if="tip.approx" class="mt-2 text-[11px] text-muted">
+        {{ tip.approx === "country" ? "Pinned to the country: the listings give no city" : "Pinned to the city, not the exact address" }}
+      </div>
       <div class="mt-2 text-[11px] text-muted">{{ tip.hint }}</div>
     </template>
   </div>

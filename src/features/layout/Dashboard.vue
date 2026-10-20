@@ -25,7 +25,7 @@ import RegionNav from "@/features/map/RegionNav.vue"
 import ResultsHeader from "@/features/results/ResultsHeader.vue"
 import ResultsList from "@/features/results/ResultsList.vue"
 import SearchBox from "@/features/search/SearchBox.vue"
-import { daysUntil, isFresh } from "@/lib/dates"
+import { deadlineState, isFresh } from "@/lib/dates"
 import { useIsDesktop, useIsWide } from "@/lib/media"
 import { useShortlist } from "@/lib/shortlist"
 import { useMode } from "@/lib/theme"
@@ -135,7 +135,7 @@ const nearby = computed(() => {
   const s = selected.value
   if (!s) return []
   return items.value
-    .filter((v) => v.id !== s.id && (daysUntil(v.deadline) ?? 0) >= 0)
+    .filter((v) => v.id !== s.id && deadlineState(v) !== "closed")
     .map((v) => ({ v, km: haversine(s, v) }))
     .filter((x) => x.km < 350)
     .sort((a, b) => a.km - b.km)

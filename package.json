@@ -16,6 +16,7 @@
     "build": "vite build && vue-tsc -p tsconfig.json",
     "preview": "vite preview",
     "typecheck": "vue-tsc -p tsconfig.json",
+    "test": "tsx --test scripts/lib/*.test.ts",
     "deploy:cloudflare": "void deploy --platform cloudflare",
     "ingest": "tsx scripts/ingest.ts",
     "ingest:offline": "tsx scripts/ingest.ts --offline"

@@ -168,10 +168,11 @@ function toDraft(
   const org = p?.hiringOrganization
   const address = [p?.jobLocation].flat()[0]?.address
   const cardPlace = text(card.match(/<div>Location:([\s\S]*?)<\/div>/)?.[1])
-  const country =
-    findCountry(address?.addressCountry) ??
-    findCountry(cardPlace.split(",").pop()) ??
-    findCountry(OVERSEAS_CAMPUS[cardPlace.split(",")[0].trim().toLowerCase()] ?? "United Kingdom")
+  // A page's own country stands even when the table doesn't know it, rather than defaulting to the UK
+  const country = address?.addressCountry
+    ? findCountry(address.addressCountry)
+    : (findCountry(cardPlace.split(",").pop()) ??
+      findCountry(OVERSEAS_CAMPUS[cardPlace.split(",")[0].trim().toLowerCase()] ?? "United Kingdom"))
   const city = address?.addressLocality ?? (cardPlace.split(",")[0] || null)
   const title = clean(p?.title ?? text(card.match(/<a href="\/job\/[^"]+">([\s\S]*?)<\/a>/)?.[1])) || "Untitled position"
   const department =
@@ -201,7 +202,7 @@ function toDraft(
     fields: fieldsFromText(title),
     city: tidyPlace(city),
     admin: tidyPlace(address?.addressRegion),
-    country: country?.name ?? "Unknown",
+    country: country?.name ?? (clean(address?.addressCountry ?? "") || "Unknown"),
     countryCode: country?.iso2 ?? null,
     lat: null,
     lng: null,

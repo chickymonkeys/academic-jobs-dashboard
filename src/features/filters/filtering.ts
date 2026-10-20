@@ -1,7 +1,7 @@
 import { boundsContain, type Bounds } from "@/domain/geo"
 import { CATEGORY_BY_ID, DISCIPLINE_LABEL, FIELD_LABEL } from "@/domain/taxonomy"
 import type { Vacancy } from "@/domain/vacancy"
-import { daysUntil, isFresh } from "@/lib/dates"
+import { daysUntil, deadlineState, isFresh, nextDate } from "@/lib/dates"
 import { list, type AppSearch } from "@/app/search"
 
 export type Filters = {
@@ -90,8 +90,9 @@ function passes(x: Indexed, f: Filters, saved: ReadonlySet<string>, skip?: Facet
     return false
   if (f.savedOnly && !saved.has(v.id)) return false
   if (f.freshOnly && !isFresh(v, now)) return false
-  const d = daysUntil(v.deadline, now)
-  if (!f.includeClosed && d != null && d < 0) return false
+  // The date that matters today: a full-consideration date, or the later close once that has passed
+  const d = daysUntil(nextDate(v, now), now)
+  if (!f.includeClosed && deadlineState(v, now) === "closed") return false
   if (f.deadline === "week" && (d == null || d > 7)) return false
   if (f.deadline === "month" && (d == null || d > 30)) return false
   if (f.deadline === "none" && d != null) return false
@@ -133,9 +134,12 @@ export type Scope = "group" | "region" | "area" | "world" | "everywhere"
 
 export function sortResults(rows: Indexed[], sort: SortKey, terms: string[]) {
   const far = "9999-12-31"
+  const now = new Date()
+  const due = new Map(rows.map((x) => [x.v.id, nextDate(x.v, now) ?? far]))
+  const byDue = (a: Indexed, b: Indexed) => due.get(a.v.id)!.localeCompare(due.get(b.v.id)!)
   const cmp: Record<SortKey, (a: Indexed, b: Indexed) => number> = {
-    relevance: (a, b) => score(b, terms) - score(a, terms) || (a.v.deadline ?? far).localeCompare(b.v.deadline ?? far),
-    deadline: (a, b) => (a.v.deadline ?? far).localeCompare(b.v.deadline ?? far),
+    relevance: (a, b) => score(b, terms) - score(a, terms) || byDue(a, b),
+    deadline: byDue,
     newest: (a, b) => (b.v.postedAt ?? b.v.firstSeenAt).localeCompare(a.v.postedAt ?? a.v.firstSeenAt),
     az: (a, b) => a.v.institution.localeCompare(b.v.institution),
   }

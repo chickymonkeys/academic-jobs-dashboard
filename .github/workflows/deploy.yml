@@ -34,6 +34,8 @@ jobs:
       - uses: actions/setup-node@v6
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # The deadline and geocoding heuristics are checked against phrasings from real postings
+      - run: pnpm test
       # Last good upstream payloads: a feed that is down falls back to its previous copy instead of vanishing
       - uses: actions/cache@v6
         with:

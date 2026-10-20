@@ -141,11 +141,14 @@ function place(card: string, meta: Record<string, string>, ld: JobPosting | null
     .replace(/\s*\/\s*(hybrid|remote)$/i, "")
     .split(/\s*,\s*/)
     .filter(Boolean)
+  // A JobPosting can list several countries (["HK", "CN"] for a post in Shanghai): only a single one settles it
+  const ldCountries = (ld?.jobLocation ?? []).map((l) => l.address?.addressCountry).filter(Boolean)
   const country =
-    findCountry(ld?.jobLocation?.[0]?.address?.addressCountry) ??
+    (ldCountries.length === 1 ? findCountry(ldCountries[0]) : null) ??
     findCountry(code) ??
     findCountry(pageParts.at(-1)) ??
-    findCountry(cardParts.at(-1))
+    findCountry(cardParts.at(-1)) ??
+    findCountry(ldCountries[0])
   const parts = pageParts.length > 1 ? pageParts : cardParts
   const city = parts.length > 1 || code ? parts[0] : null
   return { country, city: city && !findCountry(city) ? city : null }

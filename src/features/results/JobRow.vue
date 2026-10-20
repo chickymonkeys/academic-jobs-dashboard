@@ -46,7 +46,7 @@ const hover = (e: PointerEvent, id: string | null) => e.pointerType === "mouse" 
       </p>
       <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-toned">
         <CategoryLabel :category="v.category" />
-        <DeadlineText :deadline="v.deadline" />
+        <DeadlineText :v="v" />
         <NewBadge v-if="isFresh(v)" />
         <SourceTags :v="v" class="ml-auto" />
       </div>

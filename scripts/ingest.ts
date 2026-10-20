@@ -17,7 +17,8 @@ import path from "node:path"
 import { findCountry, regionForPoint } from "../src/domain/geo"
 import { disciplinesFor } from "../src/domain/taxonomy"
 import { MetaSchema, SnapshotSchema, VacancySchema, type SourceStatus, type Vacancy } from "../src/domain/vacancy"
-import { Geocoder } from "./lib/geocode"
+import { resolveDeadline } from "./lib/deadline"
+import { cleanPlace, Geocoder } from "./lib/geocode"
 import { jaccard, normName, titleTokens } from "./lib/text"
 import { academicTransferAdapter } from "./sources/academictransfer"
 import { ajoAdapter } from "./sources/ajo"
@@ -133,6 +134,10 @@ function dedupe(drafts: Draft[]): Draft[] {
     })
     if (match) {
       match.alsoOn.push({ source: d.source, url: d.url })
+      // A listing that states no deadline (HigherEdJobs gives none) takes the one its twin states
+      if (!match.deadline && !match.rolling && (d.deadline || d.rolling)) {
+        Object.assign(match, { deadline: d.deadline, deadlineKind: d.deadlineKind, closesAt: d.closesAt, rolling: d.rolling })
+      }
       match.fields = [...new Set([...match.fields.filter((f) => f !== "any"), ...d.fields.filter((f) => f !== "any")])]
       if (!match.fields.length) match.fields = ["any"]
       match.disciplines = disciplinesFor([...match.disciplines, ...d.disciplines], match)
@@ -161,6 +166,34 @@ async function main() {
   const drafts = results.flatMap((r) => r.drafts)
   for (const d of drafts) d.disciplines = disciplinesFor(d.disciplines, d)
 
+  // First-seen bookkeeping gives every source a "posted" signal, even those (JOE) that don't publish one.
+  const seenFile = path.join(DATA, "seen.json")
+  const seen = await readJson<{ baseline: string | null; ids: Record<string, string> }>(seenFile, {
+    baseline: null,
+    ids: {},
+  })
+  const baseline = (seen.baseline ??= today)
+
+  // The true deadline: the board's date checked against the dates the posting's own text gives
+  let moved = 0
+  for (const d of drafts) {
+    const listed = d.deadline
+    const text = [...d.detail.blocks.map((b) => b.text), ...d.detail.requirements].join("\n")
+    Object.assign(
+      d,
+      resolveDeadline({
+        text,
+        listed,
+        ref: d.postedAt ?? seen.ids[d.id] ?? today,
+        // Numeric dates read month first in North America
+        usOrder: d.countryCode === "US" || d.countryCode === "CA",
+      }),
+    )
+    if (d.deadline !== listed) moved++
+  }
+  console.log(`deadlines: ${moved} of ${drafts.length} differ from the board's date`)
+
+  for (const d of drafts) cleanPlace(d)
   const geocoder = await Geocoder.load(path.join(DATA, "geocache.json"), OFFLINE ? 0 : BUDGET)
   geocoder.indexKnown(drafts)
   const located: Draft[] = []
@@ -176,14 +209,6 @@ async function main() {
 
   const unique = dedupe(located)
   console.log(`dedupe: ${located.length} → ${unique.length}`)
-
-  // First-seen bookkeeping gives every source a "posted" signal, even those (JOE) that don't publish one.
-  const seenFile = path.join(DATA, "seen.json")
-  const seen = await readJson<{ baseline: string | null; ids: Record<string, string> }>(seenFile, {
-    baseline: null,
-    ids: {},
-  })
-  const baseline = (seen.baseline ??= today)
 
   const items: Vacancy[] = unique.map((d) => {
     const firstSeenAt = (seen.ids[d.id] ??= today)

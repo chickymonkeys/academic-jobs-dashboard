@@ -13,7 +13,8 @@ import MapTooltip from "./MapTooltip.vue"
 import type { Counts, Tip } from "./types"
 
 /** Every position at one coordinate. Many share one: same institution, or a city-level geocode. */
-type Site = { lng: number; lat: number; ids: string[]; counts: Counts; top: Category; approx: boolean }
+/** `approx`: the coarsest pin at the site, when some are only placed at their city or country */
+type Site = { lng: number; lat: number; ids: string[]; counts: Counts; top: Category; approx?: "city" | "country" }
 type SiteProps = { i: number }
 type ClusterProps = Counts & { n: number }
 type SiteF = PointFeature<SiteProps>
@@ -63,13 +64,13 @@ const sites = computed(() => {
     const key = `${v.lng.toFixed(4)},${v.lat.toFixed(4)}`
     let s = byKey.get(key)
     if (!s) {
-      s = { lng: v.lng, lat: v.lat, ids: [], counts: zeroCounts(), top: v.category, approx: false }
+      s = { lng: v.lng, lat: v.lat, ids: [], counts: zeroCounts(), top: v.category }
       byKey.set(key, s)
     }
     s.ids.push(v.id)
     s.counts[v.category]++
     if (s.counts[v.category] > s.counts[s.top]) s.top = v.category
-    if (v.geoPrecision !== "exact") s.approx = true
+    if (v.geoPrecision === "country" || (v.geoPrecision === "city" && !s.approx)) s.approx = v.geoPrecision
   }
   return [...byKey.values()]
 })
@@ -235,7 +236,7 @@ const layers = computed(() => {
   ]
 })
 
-function groupTip(ids: string[], counts: ClusterProps, where: string | null, hint: string, approx?: boolean) {
+function groupTip(ids: string[], counts: ClusterProps, where: string | null, hint: string, approx?: Site["approx"]) {
   const vs = ids.map((id) => props.byId.get(id)).filter((v): v is Vacancy => !!v)
   let names = [...new Set(vs.map((v) => v.institution))]
   if (!where) {
