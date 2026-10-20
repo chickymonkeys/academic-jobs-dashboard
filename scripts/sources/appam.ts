@@ -56,6 +56,8 @@ export const appamAdapter: SourceAdapter = {
 }
 
 const day = (ms: number | null | undefined) => (ms ? new Date(ms).toISOString().slice(0, 10) : null)
+/** Deadlines are the employer's local midnight (05:00 UTC in New York, 16:00 UTC the day before in Hong Kong): the nearest UTC day is the one meant */
+const deadlineDay = (ms: number | null | undefined) => (ms ? day(ms + 12 * 3_600_000) : null)
 const money = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 })
 
 function toDraft(job: AppamJob): Draft {
@@ -95,7 +97,7 @@ function toDraft(job: AppamJob): Draft {
     lng: null,
     geoPrecision: null,
     postedAt: day(job.postedDate),
-    deadline: day(job.applicationDeadline),
+    deadline: deadlineDay(job.applicationDeadline),
     summary: summarize(blocks),
     // Its logos are bare file names whose storage location the page doesn't expose
     logoUrl: null,

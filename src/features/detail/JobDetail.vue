@@ -9,7 +9,7 @@ import NewBadge from "@/components/job/NewBadge.vue"
 import SaveButton from "@/components/job/SaveButton.vue"
 import SourceTags from "@/components/job/SourceTags.vue"
 import { placeLabel, sourceLabel, sourceList } from "@/components/job/labels"
-import { fmtDate, isFresh } from "@/lib/dates"
+import { deadlineNotes, fmtDate, isFresh } from "@/lib/dates"
 import DetailSection from "./DetailSection.vue"
 import JobDescription from "./JobDescription.vue"
 
@@ -108,8 +108,9 @@ async function copyLink() {
         <div class="bg-default px-3 py-2.5">
           <dt class="text-[11px] text-muted">Deadline</dt>
           <dd class="mt-0.5 text-[13px] text-highlighted">
-            <DeadlineText :deadline="v.deadline" class="text-[13px]" />
-            <div v-if="v.deadline" class="text-xs text-muted">{{ fmtDate(v.deadline) }}</div>
+            <DeadlineText :v="v" class="text-[13px]" />
+            <!-- What each date means: postings give a review start or full-consideration date before their close -->
+            <div v-for="note in deadlineNotes(v)" :key="note" class="text-xs text-muted">{{ note }}</div>
           </dd>
         </div>
         <div class="bg-default px-3 py-2.5">
@@ -120,6 +121,7 @@ async function copyLink() {
               {{ placeLabel(v) }}
             </span>
             <div v-if="v.geoPrecision === 'country'" class="text-xs text-muted">Approximate pin</div>
+            <div v-else-if="v.geoPrecision === 'city'" class="text-xs text-muted">Pinned to the city</div>
           </dd>
         </div>
         <div class="bg-default px-3 py-2.5">

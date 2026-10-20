@@ -8,6 +8,7 @@ import DeadlineText from "@/components/job/DeadlineText.vue"
 import SaveButton from "@/components/job/SaveButton.vue"
 import SourceTags from "@/components/job/SourceTags.vue"
 import { placeLabel } from "@/components/job/labels"
+import { nextDate } from "@/lib/dates"
 
 const props = defineProps<{ rows: Indexed[]; selectedId?: string; hoveredId: string | null }>()
 const emit = defineEmits<{ select: [id: string]; hover: [id: string | null] }>()
@@ -31,7 +32,7 @@ const columns: TableColumn<Indexed>[] = [
     accessorFn: fieldLabels,
     meta: width("w-28"),
   },
-  { id: "deadline", header: "Deadline", accessorFn: (r) => r.v.deadline ?? "9999-12-31", meta: width("w-32") },
+  { id: "deadline", header: "Deadline", accessorFn: (r) => nextDate(r.v) ?? "9999-12-31", meta: width("w-32") },
   { id: "source", header: "Source", accessorFn: (r) => r.v.source, meta: width("w-28") },
 ]
 
@@ -99,7 +100,7 @@ const rowClass = (row: TableRow<Indexed>) =>
       <span class="block truncate text-muted">{{ fieldLabels(row.original) }}</span>
     </template>
     <template #deadline-cell="{ row }">
-      <DeadlineText :deadline="row.original.v.deadline" />
+      <DeadlineText :v="row.original.v" />
     </template>
     <template #source-cell="{ row }">
       <SourceTags :v="row.original.v" />

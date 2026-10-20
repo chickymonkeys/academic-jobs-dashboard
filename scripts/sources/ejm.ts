@@ -77,8 +77,11 @@ export const ejmAdapter: SourceAdapter = {
       const types = names(ad.position_types)
       const categories = names(ad.categories)
       const title = clean(ad.adtitle ?? "Untitled position")
-      const lat = num(ad.latitude ?? loc?.latitude)
-      const lng = num(ad.longitude ?? loc?.longitude)
+      // The ad's own coordinates are the employer's headquarters (Georgetown in Washington for a post at its
+      // Doha campus, Charles River Associates in Boston for one in London); the location's are the post's.
+      // A location without coordinates is geocoded from its city rather than pinned at the headquarters.
+      const lat = loc ? num(loc.latitude) : num(ad.latitude)
+      const lng = loc ? num(loc.longitude) : num(ad.longitude)
       return {
         id: `ejm-${sourceId}`,
         source: "ejm",

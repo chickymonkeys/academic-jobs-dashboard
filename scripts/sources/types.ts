@@ -1,12 +1,19 @@
 import type { GeoPrecision, SourceId, Vacancy, VacancyDetail } from "../../src/domain/vacancy"
 
-/** What an adapter emits: a vacancy before geocoding, dedupe and first-seen bookkeeping */
-export type Draft = Omit<Vacancy, "worldRegion" | "lat" | "lng" | "geoPrecision" | "firstSeenAt"> & {
+/**
+ * What an adapter emits: a vacancy before geocoding, dedupe and first-seen bookkeeping. `deadline` is the
+ * date the board lists; the ingest reconciles it with the dates the posting's text gives (lib/deadline.ts)
+ * and fills in the other deadline fields.
+ */
+export type Draft = Omit<
+  Vacancy,
+  "worldRegion" | "lat" | "lng" | "geoPrecision" | "firstSeenAt" | "deadlineKind" | "closesAt" | "rolling"
+> & {
   lat: number | null
   lng: number | null
   geoPrecision: GeoPrecision | null
   detail: Omit<VacancyDetail, "id">
-}
+} & Partial<Pick<Vacancy, "deadlineKind" | "closesAt" | "rolling">>
 
 /**
  * A listings source. Adding a source = implementing this interface and registering it in scripts/ingest.ts.

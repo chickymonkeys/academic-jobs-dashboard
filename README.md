@@ -37,6 +37,16 @@ pnpm run deploy:cloudflare   # build and deploy to your Cloudflare account
 
 Everything is fetched politely: one request at a time per portal, spaced out (2–3 s, and the 10 s AcademicTransfer asks for), with back-off on 429/5xx. Job pages already fetched are carried over from the previous payload, so each run only fetches new ones, up to a per-run budget. MUR and AcademicTransfer are re-read at most every 12 hours (`refreshHours`).
 
+**Deadlines.** The date a board files a posting under is often not the one that matters. JOE's and EJM's deadline fields frequently hold the day the listing comes down ("March 1"), while the posting says "review of applications will begin November 13" or "applications received by November 15 will receive full consideration"; some boards give no date although the text names one. `scripts/lib/deadline.ts` reads every dated phrase in a posting, classifies it by the words before it (review begins, full or priority consideration, deadline, final close, extension) and drops dates about something else (start dates, interviews, letters, funding periods, eligibility cutoffs). The listing then carries:
+
+- `deadline`, the date to apply by, and `deadlineKind`, what that date is (`review`, `priority` or `deadline`). A full-consideration date beats an earlier review start, a review start beats a later hard deadline, and the board's own date stands when the text gives none.
+- `closesAt`, a later date applications are still taken until: the text's final date, or the board's when the text gives no hard deadline.
+- `rolling`, set when applications are reviewed on a rolling basis or until the position is filled.
+
+The app shows the next of these dates ("12 days left"), explains them in the detail panel ("Review begins Nov 13, 2026 · Accepted until Mar 1, 2027 or until filled"), and keeps a search whose review has begun listed as open until filled rather than closed. About one listing in ten gets a different date from its board's this way, most often an earlier one. `pnpm test` checks the reader against phrasings from real postings.
+
+**Places.** Each listing is pinned at its institution when it can be found, else at its city, else at its country ("Approximate pin"). `scripts/lib/geocode.ts` first tidies the place (drops "Other / Non-US", "N/A", "Fully remote", splits "Washington, DC"), then searches Nominatim for the institution by name, under a few variants ("University of Chicago Booth School of Business" is also tried as "University of Chicago", "(UCLA)" is dropped), within 25 km of the listing's city. A result is kept only when it is the kind of place that hires people and its name holds every distinctive word of the institution's without adding its own, so "BRG" no longer lands on a footbridge in Washington State, "Columbia Business School" on a business school in South Carolina, nor the "City University of New York" on New York University; of two campuses with the same name, the one nearer the listing's city wins. EJM's own coordinates are used where it gives them for the post's address (not its employer's headquarters, which put a Doha campus in Washington DC). Raw search results are cached in `data/geocache.json`, so the checks can change without asking Nominatim again.
+
 **Disciplines.** Each listing gets the discipline of the feed or category it came from, widened by its title and hiring unit: a JOE ad from a Department of Government is political science too, one from a policy school is public policy, and a political science ad whose title names economics is economics too. A department name only adds political science when the title doesn't name economics, so "Professor of Economics" in a Department of Politics and Economics stays economics. Duplicates merged across sources keep every discipline they were found under. The JEL field vocabulary is shared: a political science listing about political economy carries field P, and one with no field signal is "Any field".
 
 **Left out, and why.**
@@ -48,7 +58,7 @@ Everything is fetched politely: one request at a time per portal, spaced out (2�
 - **H-Net Job Guide** and the **PSA** jobs page: H-Net's political science category is mostly humanities fellowships, and the PSA page is a single free-text post.
 - **Inomics**: its API ignores filters, so reading it means downloading about 17 MB of mixed content per run.
 
-**Partial reads.** APPAM's server render holds the first 25 listings (featured and newest); the rest load from an API its `robots.txt` closes. AcademicTransfer is read through its sitemap because its search pages render only ten results; a job page is opened only when its slug looks relevant (economics, politics, policy, governance, public administration), so a relevant post with an unrelated slug is missed.
+**Partial reads.** HigherEdJobs' feeds carry no description or deadline, and its job pages answer automated reads with a bot challenge after the first few, so they are not read: a HigherEdJobs listing shows "No deadline stated" unless another board lists the same post. APPAM's server render holds the first 25 listings (featured and newest); the rest load from an API its `robots.txt` closes. AcademicTransfer is read through its sitemap because its search pages render only ten results; a job page is opened only when its slug looks relevant (economics, politics, policy, governance, public administration), so a relevant post with an unrelated slug is missed.
 
 ## UX design
 
@@ -60,10 +70,10 @@ Everything is fetched politely: one request at a time per portal, spaced out (2�
 | **Geographic navigation** | Region chips with live counts: picking one frames it and lists exactly the positions it counts, until you move the map yourself; search suggests *places* and *institutions* to fly to; "near me"; fit-to-results; globe view; a pin shared by several positions lists them instead of zooming forever, and says when it is only city-level. |
 | **Intuitive search** | Live, diacritic-insensitive, ranked (title > institution > place); faceted filters (discipline, position, field, deadline, source) show counts computed with every *other* filter applied; the legend doubles as a position-type filter. |
 | **Shareable state** | Every filter, the selection, the layout and the camera live in the URL (Zod-validated, self-healing). Back closes the detail panel. |
-| **Urgency without alarm** | Deadlines carry icon + words ("3 days left"), never color alone; "New" for listings posted in the last 7 days; a saved shortlist that works offline. |
+| **Urgency without alarm** | Deadlines carry icon + words ("3 days left"), never color alone, and count down to the date that matters today: a review start or full-consideration date, then the final close. "New" for listings posted in the last 7 days; a saved shortlist that works offline. |
 | **Responsive** | ≥1024px: side panel, detail panel, optional TanStack Table comparison view. Mobile: Apple-Maps-style non-modal bottom sheet (peek / half / full) that keeps clear of notches and the home indicator; from 640px (tablets, phones on their side) it floats as a left-hand card so the map stays in view. Hover cards are mouse-only: on a touch screen a tap opens a pin or zooms into a cluster. The map engine loads as its own chunk after the search and list are already usable. |
 | **Keyboard** | `/` or `⌘K` search · `j`/`k` or `↑`/`↓` step through results (camera follows) · `Esc` back out · `f` fit · `+`/`−` zoom. |
-| **Trust** | A "Updated n min ago" popover shows each feed's health, count and fetch time; geocoded-to-country pins say "Approximate pin". |
+| **Trust** | A "Updated n min ago" popover shows each feed's health, count and fetch time; the detail panel says what each date is ("Review begins…", "Full consideration by…", "Accepted until…") and when a pin is only city- or country-level. |
 
 Map colors are the validated categorical palette (slots 1–5 in their CVD-safe order), Clusters and count badges are neutral ink, so hue on the map only ever means position type. Listings are grouped by coordinate before clustering, and clustering stops at zoom 10, so every place gets its own pin up close. Light and dark mode each get their own steps.
 
@@ -82,9 +92,10 @@ scripts/                       ingest (Node, run on a schedule)
   sources/academictransfer.ts  AcademicTransfer vacancy sitemap + JobPosting JSON-LD per job
   sources/hej.ts               HigherEdJobs Economics, Agricultural Economics, Political Science and Public Policy RSS
   lib/http.ts                  polite paged GETs: spacing, retries with back-off on 429/5xx
-  lib/geocode.ts               known institution coords → cache → Nominatim (1 req/s) → country
+  lib/geocode.ts               place clean-up → feed coords → institution near its city (Nominatim, 1 req/s, checked) → city → country
+  lib/deadline.ts              the true deadline: dated phrases in a posting, classified and reconciled with the board's date
   lib/text.ts                  HTML/plain text → safe structural blocks (no markup reaches the DOM)
-  ingest.ts                    collect → geocode → cross-source dedupe → first-seen tracking → write
+  ingest.ts                    collect → true deadlines → geocode → cross-source dedupe → first-seen tracking → write
 src/domain/                    Zod schemas + taxonomy + geo, shared by ingest and app
 src/app/                       router (one view) + URL search state (Zod-validated, self-healing)
 src/data/                      TanStack Query: poll meta → versioned snapshot → lazy details
