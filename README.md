@@ -136,6 +136,15 @@ UI is Nuxt UI in plain Vue mode (`@nuxt/ui/vite`): components (`UButton`, `UPopo
    ```
 
    From then on, `.github/workflows/deploy.yml` fetches fresh listings and deploys on every push to `main` and every 3 hours. Without the token, it still runs the pipeline, but only builds and type-checks.
+6. **Protect `main` (optional):** the repository's "Protect main" ruleset takes changes only through pull requests reviewed by the code owner (`.github/CODEOWNERS`) and blocks force pushes and deletion. Admins can merge their own pull requests by bypassing the review, but can't push directly. The workflow token can't bypass a ruleset on a personal account's repository, so CI pushes its state with a deploy key, the one actor the ruleset lets through:
+
+   ```bash
+   ssh-keygen -t ed25519 -N "" -C "CI: ingest state" -f ingest_state
+   gh repo deploy-key add ingest_state.pub --allow-write --title "CI: ingest state"
+   gh secret set INGEST_DEPLOY_KEY < ingest_state && rm ingest_state ingest_state.pub
+   ```
+
+   Then create the ruleset under **Settings → Rules → Rulesets**: target the default branch, add **Repository admin** (for pull requests only) and **Deploy keys** (always) to the bypass list, and turn on **Restrict deletions**, **Block force pushes** and **Require a pull request before merging** with one approval and code owner review.
 
 **What the free plan covers:** the app is a static SPA on Workers Static Assets. The edge serves it, along with the snapshot under `/data/`, without running Worker code, and asset requests are free and unmetered. The Worker only answers Void's own `/__void` endpoints, well inside the 100,000 requests a day of Workers Free. One limit to watch is 20,000 files per deploy on Free; each listing adds one `data/details/*.json`, and there are about 1,300 today.
 
