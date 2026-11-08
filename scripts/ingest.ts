@@ -98,6 +98,8 @@ function dedupe(drafts: Draft[], merged: Array<[dup: Draft, primary: Draft]> = [
       if (!match.deadline && !match.rolling && (d.deadline || d.rolling)) {
         Object.assign(match, { deadline: d.deadline, deadlineKind: d.deadlineKind, closesAt: d.closesAt, rolling: d.rolling })
       }
+      // The post went up when the first board to state a date says it did (JOE states none, so its twin's date counts)
+      if (d.postedAt && (!match.postedAt || d.postedAt < match.postedAt)) match.postedAt = d.postedAt
       match.fields = [...new Set([...match.fields.filter((f) => f !== "any"), ...d.fields.filter((f) => f !== "any")])]
       if (!match.fields.length) match.fields = ["any"]
       match.disciplines = disciplinesFor([...match.disciplines, ...d.disciplines], match)

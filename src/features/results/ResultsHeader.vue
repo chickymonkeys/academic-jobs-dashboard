@@ -138,13 +138,17 @@ const link = "font-medium text-primary underline-offset-2 hover:underline"
         />
       </UFieldGroup>
     </div>
-    <!-- Its own row, the panel's full width: what the filters hide must never be the part that's cut off -->
-    <p v-if="filtered" class="mt-2 flex min-w-0 items-center rounded-md bg-elevated px-2 py-1.5 text-xs whitespace-nowrap text-toned">
-      <UIcon name="i-lucide-filter" class="mr-1.5 size-3.5 shrink-0 text-primary" aria-hidden="true" />
-      <span class="truncate">
-        {{ hiddenBy }} {{ hidden.toLocaleString() }} of {{ all.toLocaleString() }} {{ search.closed ? "positions" : "open positions" }}
-      </span>
-      <span class="shrink-0">&nbsp;· <button :class="link" @click="emit('clearFilters')">Clear</button></span>
-    </p>
+    <!-- Its own row, the panel's full width: what the filters hide must never be the part that's cut off. Screen
+         readers hear it with the count: the live region stays in the page so the line appearing is announced, and
+         reads whole so a changed number comes with what it counts. -->
+    <div aria-live="polite" aria-atomic="true">
+      <p v-if="filtered" class="mt-2 flex min-w-0 items-center rounded-md bg-elevated px-2 py-1.5 text-xs whitespace-nowrap text-toned">
+        <UIcon name="i-lucide-filter" class="mr-1.5 size-3.5 shrink-0 text-primary" aria-hidden="true" />
+        <span class="truncate">
+          {{ hiddenBy }} {{ hidden.toLocaleString() }} of {{ all.toLocaleString() }} {{ search.closed ? "positions" : "open positions" }}
+        </span>
+        <span class="shrink-0">&nbsp;· <button :class="link" @click="emit('clearFilters')">Clear</button></span>
+      </p>
+    </div>
   </div>
 </template>
