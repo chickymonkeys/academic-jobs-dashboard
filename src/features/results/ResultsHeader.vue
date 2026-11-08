@@ -3,6 +3,7 @@ import { computed } from "vue"
 import type { DropdownMenuItem } from "@nuxt/ui"
 import type { AppSearch, SetSearch } from "@/app/search"
 import type { Scope, SortKey } from "@/features/filters/filtering"
+import { sortById, sortsFor } from "./sorts"
 
 const props = defineProps<{
   count: number
@@ -15,21 +16,17 @@ const props = defineProps<{
   search: AppSearch
   set: SetSearch
   showViewToggle: boolean
+  /** Phones: the sort button opens the sort sheet instead of a menu */
+  sheet?: boolean
 }>()
-const emit = defineEmits<{ clearGroup: []; world: [] }>()
+const emit = defineEmits<{ clearGroup: []; world: []; sort: [] }>()
 
-const SORTS: Array<{ id: SortKey; label: string }> = [
-  { id: "relevance", label: "Best match" },
-  { id: "deadline", label: "Deadline (soonest)" },
-  { id: "newest", label: "Newest first" },
-  { id: "az", label: "Institution A–Z" },
-]
-const sortLabel = computed(() => SORTS.find((s) => s.id === props.sortKey)?.label ?? "")
+const sort = computed(() => sortById(props.sortKey))
 
 const menu = computed<DropdownMenuItem[][]>(() => [
   [
     { type: "label", label: "Sort by" },
-    ...SORTS.map(
+    ...sortsFor(props.hasQuery).map(
       (s): DropdownMenuItem => ({
         label: s.label,
         type: "checkbox",
@@ -59,28 +56,52 @@ const link = "font-medium text-primary underline-offset-2 hover:underline"
       <h2 class="text-sm font-semibold text-highlighted tabular-nums" aria-live="polite">
         {{ count.toLocaleString() }} {{ count === 1 ? "position" : "positions" }}
       </h2>
-      <p class="truncate text-xs text-muted">
+      <!-- The description gives way to the action when space runs short: "List all" is never cut off -->
+      <p class="flex min-w-0 text-xs whitespace-nowrap text-muted">
         <template v-if="scope === 'group'">
-          at {{ groupLabel }} · <button :class="link" @click="emit('clearGroup')">Show all</button>
+          <span class="truncate">at {{ groupLabel }}</span>
+          <span class="shrink-0">&nbsp;· <button :class="link" @click="emit('clearGroup')">Show all</button></span>
         </template>
         <template v-else-if="scope === 'region'">
-          in {{ regionLabel }} · {{ total.toLocaleString() }} total ·
-          <button :class="link" @click="emit('world')">Show all</button>
+          <span class="truncate">in {{ regionLabel }} · {{ total.toLocaleString() }} total</span>
+          <span class="shrink-0">&nbsp;· <button :class="link" @click="emit('world')">Show all</button></span>
         </template>
         <template v-else-if="scope === 'area'">
-          in visible map area · {{ total.toLocaleString() }} total ·
-          <button :class="link" @click="set({ area: false })">List all</button>
+          <span class="truncate">in map view · {{ total.toLocaleString() }} total</span>
+          <span class="shrink-0">&nbsp;· <button :class="link" @click="set({ area: false })">List all</button></span>
         </template>
-        <template v-else-if="scope === 'world'">worldwide, sorted by {{ sortLabel.toLowerCase() }}</template>
+        <span v-else-if="scope === 'world'" class="truncate">worldwide</span>
         <template v-else>
-          everywhere (ignoring map) · <button :class="link" @click="set({ area: undefined })">Follow map</button>
+          <span class="truncate">everywhere, map ignored</span>
+          <span class="shrink-0">&nbsp;· <button :class="link" @click="set({ area: undefined })">Follow map</button></span>
         </template>
       </p>
     </div>
-    <UDropdownMenu :items="menu" :content="{ align: 'end' }" :ui="{ content: 'w-52' }">
-      <UTooltip :text="`Sort: ${sortLabel}`">
-        <UButton color="neutral" variant="ghost" size="sm" icon="i-lucide-arrow-up-down" aria-label="Sort results" />
-      </UTooltip>
+    <!-- The order is named on the button, so "sorted by deadline" is visible without opening anything -->
+    <UButton
+      v-if="sheet"
+      color="neutral"
+      variant="soft"
+      size="sm"
+      icon="i-lucide-arrow-up-down"
+      :aria-label="`Sort: ${sort.label}`"
+      aria-haspopup="dialog"
+      class="h-9 shrink-0 rounded-full px-3 text-xs"
+      @click="emit('sort')"
+    >
+      {{ sort.short }}
+    </UButton>
+    <UDropdownMenu v-else :items="menu" :content="{ align: 'end' }" :ui="{ content: 'w-56' }">
+      <UButton
+        color="neutral"
+        variant="ghost"
+        size="sm"
+        icon="i-lucide-arrow-up-down"
+        :aria-label="`Sort: ${sort.label}`"
+        class="shrink-0 text-xs text-toned"
+      >
+        {{ sort.short }}
+      </UButton>
     </UDropdownMenu>
     <UFieldGroup v-if="showViewToggle" size="sm" aria-label="Result layout">
       <UButton

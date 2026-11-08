@@ -5,7 +5,7 @@ defineProps<{ active?: boolean }>()
 <template>
   <button
     type="button"
-    class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none"
+    class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium whitespace-nowrap transition-colors pointer-coarse:h-9 pointer-coarse:px-3.5 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none"
     :class="
       active
         ? 'border-primary/25 bg-primary/10 text-primary hover:bg-primary/15'

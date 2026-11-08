@@ -78,7 +78,14 @@ export function score(x: Indexed, terms: string[]) {
   return s
 }
 
-type FacetKey = "cats" | "discs" | "fields" | "sources"
+type FacetKey = "cats" | "discs" | "fields" | "sources" | "dl"
+
+/** Which deadline bucket a listing falls in, for the Deadline filter and its counts */
+export function deadlineBucket(v: Vacancy, now = new Date()): "week" | "month" | "later" | "none" {
+  const d = daysUntil(nextDate(v, now), now)
+  if (d == null) return "none"
+  return d <= 7 ? "week" : d <= 30 ? "month" : "later"
+}
 
 function passes(x: Indexed, f: Filters, saved: ReadonlySet<string>, skip?: FacetKey, now = new Date()) {
   const v = x.v
@@ -90,13 +97,13 @@ function passes(x: Indexed, f: Filters, saved: ReadonlySet<string>, skip?: Facet
     return false
   if (f.savedOnly && !saved.has(v.id)) return false
   if (f.freshOnly && !isFresh(v, now)) return false
-  // The date that matters today: a full-consideration date, or the later close once that has passed
-  const d = daysUntil(nextDate(v, now), now)
   if (!f.includeClosed && deadlineState(v, now) === "closed") return false
-  if (f.deadline === "week" && (d == null || d > 7)) return false
-  if (f.deadline === "month" && (d == null || d > 30)) return false
-  if (f.deadline === "none" && d != null) return false
-  return true
+  if (skip === "dl" || f.deadline === "any") return true
+  // The date that matters today: a full-consideration date, or the later close once that has passed
+  const b = deadlineBucket(v, now)
+  if (f.deadline === "week") return b === "week"
+  if (f.deadline === "month") return b === "week" || b === "month"
+  return b === "none"
 }
 
 export function applyFilters(index: Indexed[], f: Filters, saved: ReadonlySet<string>) {
@@ -115,13 +122,23 @@ export function facetCounts(index: Indexed[], f: Filters, saved: ReadonlySet<str
     }
     return out
   }
+  // Deadline choices nest ("within 30 days" holds "within 7"), so each counts every bucket it takes in
+  const buckets = count("dl", (v) => [deadlineBucket(v, now)])
+  const dls = {
+    any: (buckets.week ?? 0) + (buckets.month ?? 0) + (buckets.later ?? 0) + (buckets.none ?? 0),
+    week: buckets.week ?? 0,
+    month: (buckets.week ?? 0) + (buckets.month ?? 0),
+    none: buckets.none ?? 0,
+  }
   return {
     cats: count("cats", (v) => [v.category]),
     discs: count("discs", (v) => v.disciplines),
     fields: count("fields", (v) => v.fields),
     sources: count("sources", (v) => [v.source, ...v.alsoOn.map((a) => a.source)]),
+    dls,
   }
 }
+export type FacetCounts = ReturnType<typeof facetCounts>
 
 export function inBounds(v: Vacancy, b: Bounds | null) {
   return !b || boundsContain(b, v.lng, v.lat)
@@ -132,10 +149,16 @@ export type SortKey = NonNullable<AppSearch["sort"]>
 /** What the list holds: a picked map group, a picked region, the visible map area, or everything */
 export type Scope = "group" | "region" | "area" | "world" | "everywhere"
 
+/** Listings with no date ahead sort after every dated one, in a fixed order, so the deadline sections stay whole */
+const UNDATED_RANK: Partial<Record<ReturnType<typeof deadlineState>, string>> = {
+  rolling: "9999-12-29",
+  unstated: "9999-12-30",
+  closed: "9999-12-31",
+}
+
 export function sortResults(rows: Indexed[], sort: SortKey, terms: string[]) {
-  const far = "9999-12-31"
   const now = new Date()
-  const due = new Map(rows.map((x) => [x.v.id, nextDate(x.v, now) ?? far]))
+  const due = new Map(rows.map((x) => [x.v.id, nextDate(x.v, now) ?? UNDATED_RANK[deadlineState(x.v, now)] ?? "9999-12-31"]))
   const byDue = (a: Indexed, b: Indexed) => due.get(a.v.id)!.localeCompare(due.get(b.v.id)!)
   const cmp: Record<SortKey, (a: Indexed, b: Indexed) => number> = {
     relevance: (a, b) => score(b, terms) - score(a, terms) || byDue(a, b),

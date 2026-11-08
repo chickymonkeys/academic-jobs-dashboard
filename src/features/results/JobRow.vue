@@ -9,7 +9,7 @@ import SourceTags from "@/components/job/SourceTags.vue"
 import { placeLabel } from "@/components/job/labels"
 import { isFresh } from "@/lib/dates"
 
-defineProps<{ v: Vacancy; selected: boolean; hovered: boolean }>()
+defineProps<{ v: Vacancy; selected: boolean; hovered: boolean; recent?: boolean }>()
 const emit = defineEmits<{ select: [id: string]; hover: [id: string | null] }>()
 
 // Only a mouse hovers: the events a browser emulates after a tap would leave the row's pin ringed on the map
@@ -20,7 +20,10 @@ const hover = (e: PointerEvent, id: string | null) => e.pointerType === "mouse" 
 <template>
   <article
     class="group relative mx-2 flex gap-3 rounded-xl p-2.5 transition-colors"
-    :class="selected ? 'bg-primary/8 ring-1 ring-primary/25' : hovered ? 'bg-elevated' : 'hover:bg-elevated'"
+    :class="[
+      selected ? 'bg-primary/8 ring-1 ring-primary/25' : hovered ? 'bg-elevated' : 'hover:bg-elevated active:bg-elevated',
+      recent && !selected && 'row-recent',
+    ]"
     @pointerenter="hover($event, v.id)"
     @pointerleave="hover($event, null)"
   >

@@ -7,9 +7,11 @@ defineProps<{ peek: string }>()
 const snap = defineModel<Snap>("snap", { required: true })
 
 // The sheet is always full height and slides down to a detent, so part of it sits below the screen edge. Its
-// scrolling content pads by that much (--sheet-hidden), or the last rows could only be reached at full height.
+// scrolling content pads by that much (--sheet-hidden), or the last rows could only be reached at full height,
+// and the detail's action bar rides up by it to sit on the screen edge. The drawer slides down by the viewport's
+// height less the detent's, whatever its own height, so that is what lies below the edge.
 const { height } = useWindowSize()
-const hidden = computed(() => Math.max(0, Math.round(height.value - 8 - sheetHeight(snap.value, height.value))))
+const hidden = computed(() => Math.max(0, Math.round(height.value - sheetHeight(snap.value, height.value))))
 </script>
 
 <!--

@@ -6,8 +6,15 @@ export type FacetOption = { id: string; label: string; count: number; color?: st
 import { computed } from "vue"
 import Chip from "./Chip.vue"
 
-const props = defineProps<{ label: string; options: FacetOption[]; selected: string[]; searchable?: boolean }>()
-const emit = defineEmits<{ toggle: [id: string]; clear: [] }>()
+const props = defineProps<{
+  label: string
+  options: FacetOption[]
+  selected: string[]
+  searchable?: boolean
+  /** On phones the chip only summarizes: tapping it opens the filter sheet at this facet */
+  sheet?: boolean
+}>()
+const emit = defineEmits<{ toggle: [id: string]; clear: []; open: [] }>()
 
 const active = computed(() => props.selected.length > 0)
 const summary = computed(() => {
@@ -27,7 +34,11 @@ function onUpdate(next: unknown) {
 </script>
 
 <template>
-  <UPopover :content="{ align: 'start' }">
+  <Chip v-if="sheet" :active="active" :aria-label="`${label} filter`" aria-haspopup="dialog" @click="emit('open')">
+    <span class="max-w-[140px] truncate">{{ summary }}</span>
+    <UIcon name="i-lucide-chevron-down" class="size-3.5 opacity-60" />
+  </Chip>
+  <UPopover v-else :content="{ align: 'start' }">
     <Chip :active="active" :aria-label="`${label} filter`">
       <span class="max-w-[140px] truncate">{{ summary }}</span>
       <UIcon name="i-lucide-chevron-down" class="size-3.5 opacity-60" />

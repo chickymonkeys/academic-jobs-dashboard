@@ -1,72 +1,82 @@
 <script setup lang="ts">
 import { computed } from "vue"
-import { CATEGORIES, DISCIPLINES, FIELDS } from "@/domain/taxonomy"
 import { list, toggleIn, type AppSearch, type SetSearch } from "@/app/search"
-import { SOURCE_IDS, type SourceId } from "@/domain/vacancy"
-import { sourceLabel, sourceName } from "@/components/job/labels"
-import { useMode } from "@/lib/theme"
+import type { SourceId } from "@/domain/vacancy"
 import Chip from "./Chip.vue"
 import DeadlineChip from "./DeadlineChip.vue"
-import FacetChip, { type FacetOption } from "./FacetChip.vue"
-import type { facetCounts } from "./filtering"
+import FacetChip from "./FacetChip.vue"
+import { activeFilterCount, NO_FILTERS, useFacetOptions, type FilterSection } from "./facets"
+import type { FacetCounts } from "./filtering"
 
 const props = defineProps<{
   search: AppSearch
   set: SetSearch
-  facets: ReturnType<typeof facetCounts>
+  facets: FacetCounts
   savedCount: number
   freshCount: number
   /** Sources the snapshot was built from; one the ingest leaves off has nothing to filter, unless it's selected */
   sourceIds?: readonly SourceId[]
+  /** Phones: chips summarize, and tapping one opens the filter sheet at its section */
+  sheet?: boolean
 }>()
+const emit = defineEmits<{ open: [section: FilterSection | null] }>()
 
-const mode = useMode()
 const cats = computed(() => list(props.search.cat))
 const discs = computed(() => list(props.search.disc))
 const fields = computed(() => list(props.search.field))
 const sources = computed(() => list(props.search.src))
-const anyActive = computed(
-  () =>
-    cats.value.length + discs.value.length + fields.value.length + sources.value.length > 0 ||
-    !!props.search.dl ||
-    !!props.search.closed ||
-    !!props.search.saved ||
-    !!props.search.fresh,
-)
+const activeCount = computed(() => activeFilterCount(props.search))
+const anyActive = computed(() => activeCount.value > 0)
 
-const catOptions = computed<FacetOption[]>(() =>
-  CATEGORIES.map((c) => ({ id: c.id, label: c.label, count: props.facets.cats[c.id] ?? 0, color: c.color[mode.value] })),
+const options = useFacetOptions(
+  () => props.facets,
+  () => props.search,
+  () => props.sourceIds,
 )
-const discOptions = computed<FacetOption[]>(() =>
-  DISCIPLINES.map((d) => ({ id: d.id, label: d.label, count: props.facets.discs[d.id] ?? 0 })),
-)
-const fieldOptions = computed<FacetOption[]>(() =>
-  FIELDS.map((f) => ({ id: f.id, label: f.label, count: props.facets.fields[f.id] ?? 0 })).sort((a, b) => b.count - a.count),
-)
-const sourceOptions = computed<FacetOption[]>(() =>
-  SOURCE_IDS.filter((s) => !props.sourceIds || props.sourceIds.includes(s) || sources.value.includes(s)).map((s) => ({
-    id: s,
-    label: sourceName(s),
-    count: props.facets.sources[s] ?? 0,
-    tag: sourceLabel(s),
-  })),
-)
+const catOptions = options.cats
+const discOptions = options.discs
+const fieldOptions = options.fields
+const sourceOptions = options.sources
 
-const clearAll = () =>
-  props.set({
-    cat: undefined,
-    disc: undefined,
-    field: undefined,
-    src: undefined,
-    dl: undefined,
-    closed: undefined,
-    saved: undefined,
-    fresh: undefined,
-  })
+const clearAll = () => props.set(NO_FILTERS)
 </script>
 
 <template>
-  <div class="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+  <!-- Phones: one "Filters" entry point with a count, then the facets most people narrow by, in thumb order -->
+  <div v-if="sheet" class="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none]">
+    <Chip :active="anyActive" aria-haspopup="dialog" :aria-label="anyActive ? `Filters, ${activeCount} on` : 'Filters'" @click="emit('open', null)">
+      <UIcon name="i-lucide-sliders-horizontal" class="size-3.5" aria-hidden="true" />
+      Filters
+      <span
+        v-if="anyActive"
+        class="-mr-1 inline-flex size-[18px] items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-inverted tabular-nums"
+        aria-hidden="true"
+      >
+        {{ activeCount }}
+      </span>
+    </Chip>
+    <DeadlineChip :search="search" :set="set" sheet @open="emit('open', 'deadline')" />
+    <FacetChip label="Position" :options="catOptions" :selected="cats" sheet @open="emit('open', 'position')" />
+    <FacetChip label="Discipline" :options="discOptions" :selected="discs" sheet @open="emit('open', 'discipline')" />
+    <Chip
+      :active="!!search.fresh"
+      :aria-pressed="!!search.fresh"
+      @click="set({ fresh: search.fresh ? undefined : true })"
+    >
+      <UIcon name="i-lucide-sparkles" class="size-3.5" aria-hidden="true" />
+      New
+      <span v-if="freshCount > 0" class="tabular-nums opacity-70">{{ freshCount }}</span>
+    </Chip>
+    <Chip :active="!!search.saved" :aria-pressed="!!search.saved" @click="set({ saved: search.saved ? undefined : true })">
+      <UIcon name="i-lucide-star" class="size-3.5" :class="search.saved && '*:fill-current'" aria-hidden="true" />
+      Saved
+      <span v-if="savedCount > 0" class="tabular-nums opacity-70">{{ savedCount }}</span>
+    </Chip>
+    <FacetChip label="Field" :options="fieldOptions" :selected="fields" sheet @open="emit('open', 'field')" />
+    <FacetChip label="Source" :options="sourceOptions" :selected="sources" sheet @open="emit('open', 'source')" />
+  </div>
+
+  <div v-else class="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
     <FacetChip
       label="Discipline"
       :options="discOptions"
