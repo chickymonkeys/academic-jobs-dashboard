@@ -7,7 +7,7 @@ A map-first dashboard of academic vacancies in economics, with political science
 
 Stack: Vue 3 · TypeScript · Vite · **Nuxt UI** (Tailwind v4, Reka UI) · **MapLibre GL** (CARTO basemaps) · **deck.gl** (interleaved) · **TanStack Query / Virtual** · Vue Router · Zod · **Void** → Cloudflare Workers.
 
-**Personal use only.** None of these boards' terms allow republishing their listings, and AEA JOE and THE forbid automated collection without written permission (see [Terms of use](#terms-of-use)). The deployment is a personal tool at an unlisted workers.dev address, and the snapshot is never committed or published. Don't link or share the address or the snapshot without the boards' written permission; the workers.dev subdomain is kept in a repository secret so the public Actions logs don't print it.
+**Personal use only.** None of these boards' terms allow republishing their listings, and AEA JOE and THE forbid automated collection without written permission (see [Terms of use](#terms-of-use)). The deployment is a personal tool at an unlisted workers.dev address, and the snapshot is never committed or published. Don't link or share the address or the snapshot without the boards' written permission.
 
 Needs Node 24 and pnpm (`corepack enable` picks up the version pinned in `package.json`).
 
@@ -167,7 +167,7 @@ Beyond the boards' terms: under the EU database right, copying and indexing a jo
 
    ```bash
    gh secret set CLOUDFLARE_API_TOKEN                          # paste the token when prompted
-   gh secret set CLOUDFLARE_WORKERS_SUBDOMAIN --body econ-atlas   # a secret, so the logs mask it
+   gh variable set CLOUDFLARE_WORKERS_SUBDOMAIN --body econ-atlas
    gh workflow run deploy                                      # first CI deploy
    ```
 
