@@ -1,4 +1,4 @@
-import { computed } from "vue"
+import { computed, toValue, type MaybeRefOrGetter } from "vue"
 import { useScreenSafeArea } from "@vueuse/core"
 
 export const SNAP_HALF = 0.52
@@ -8,11 +8,16 @@ export type Snap = number | string | null
 /** Width of the sheet where it floats as a left-hand card (tablets, phones on their side) */
 export const SHEET_W = 400
 const PEEK_PX = 132
+/** The results header's "Filters hide …" line, which peek makes room for while it shows */
+export const PEEK_FILTER_NOTE_PX = 36
 
-/** Peek shows the count and the region strip, kept clear of the home indicator on notched phones */
-export function usePeekSnap() {
+/**
+ * Peek shows the count and the region strip, kept clear of the home indicator on notched phones, plus `extra`
+ * pixels for whatever else the header shows above the strip
+ */
+export function usePeekSnap(extra: MaybeRefOrGetter<number> = 0) {
   const { bottom } = useScreenSafeArea()
-  return computed(() => `${PEEK_PX + Math.round(parseFloat(bottom.value) || 0)}px`)
+  return computed(() => `${PEEK_PX + toValue(extra) + Math.round(parseFloat(bottom.value) || 0)}px`)
 }
 
 export const isPeek = (snap: Snap) => snap == null || typeof snap === "string"
