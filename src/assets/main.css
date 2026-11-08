@@ -84,6 +84,8 @@
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "cv11", "ss01";
     overscroll-behavior: none;
+    /* Controls draw their own pressed state; the grey flash a phone adds on top looks like a glitch */
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
@@ -97,6 +99,27 @@
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: color-mix(in oklch, var(--ui-text-muted) 35%, transparent) transparent;
+  }
+  /* The listing you just came back from: ringed, then fading out, so you find your place in the list */
+  .row-recent {
+    animation: row-recent 2.4s ease-out both;
+  }
+  @keyframes row-recent {
+    0%,
+    40% {
+      background: color-mix(in oklch, var(--ui-primary) 9%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ui-primary) 30%, transparent);
+    }
+    100% {
+      background: transparent;
+      box-shadow: inset 0 0 0 1px transparent;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .row-recent {
+      animation-duration: 0.01s;
+      animation-delay: 1.6s;
+    }
   }
   .prose-job {
     @apply text-sm leading-relaxed text-toned;

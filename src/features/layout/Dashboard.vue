@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, shallowRef, useTemplateRef, watch } from "vue"
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef, useTemplateRef, watch } from "vue"
 import { useDebounceFn, useElementBounding, useEventListener, useWindowSize } from "@vueuse/core"
 import { list, parseCamera, toggleIn, useAppSearch } from "@/app/search"
 import { useVacancies } from "@/data/use-vacancies"
@@ -16,7 +16,9 @@ import {
   type Scope,
   type SortKey,
 } from "@/features/filters/filtering"
+import { NO_FILTERS, type FilterSection } from "@/features/filters/facets"
 import FilterBar from "@/features/filters/FilterBar.vue"
+import FilterSheet from "@/features/filters/FilterSheet.vue"
 import JobDetail from "@/features/detail/JobDetail.vue"
 import { provideMapContext, useCamera, type Padding } from "@/features/map/camera"
 import Legend from "@/features/map/Legend.vue"
@@ -24,6 +26,7 @@ import MapControls from "@/features/map/MapControls.vue"
 import RegionNav from "@/features/map/RegionNav.vue"
 import ResultsHeader from "@/features/results/ResultsHeader.vue"
 import ResultsList from "@/features/results/ResultsList.vue"
+import SortSheet from "@/features/results/SortSheet.vue"
 import SearchBox from "@/features/search/SearchBox.vue"
 import { deadlineState, isFresh } from "@/lib/dates"
 import { useIsDesktop, useIsWide } from "@/lib/media"
@@ -64,6 +67,14 @@ const topBar = useTemplateRef<HTMLElement>("topBar")
 const initialCamera = parseCamera(search.value.at)
 const searchBox = useTemplateRef<InstanceType<typeof SearchBox>>("searchBox")
 let zoomOnSelect = false
+
+// Phones: the filter and sort sheets, the list's scroll position while a listing's details stand in for it,
+// and the listing you last opened, ringed when the list comes back
+const filtersOpen = ref(false)
+const filterSection = ref<FilterSection | null>(null)
+const sortOpen = ref(false)
+const listOffset = ref(0)
+const recentId = ref<string | null>(null)
 
 const view = computed(() => (isDesktop.value ? (search.value.view ?? "list") : "list"))
 const sortKey = computed<SortKey>(() => search.value.sort ?? (search.value.q ? "relevance" : "deadline"))
@@ -150,6 +161,29 @@ function select(id: string | null, opts?: { zoom?: boolean }) {
 }
 const selectFromList = (id: string) => select(id, { zoom: true })
 const selectFromMap = (id: string) => select(id)
+// Whatever closes the details (the back button, Esc, the browser's Back), the list then rings the listing you had
+// open. The ring is let go once it has faded, so the row doesn't light up again when it next scrolls into view.
+let recentTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => search.value.sel,
+  (_next, prev) => {
+    if (!prev) return
+    recentId.value = prev
+    clearTimeout(recentTimer)
+    recentTimer = setTimeout(() => (recentId.value = null), 3000)
+  },
+)
+onBeforeUnmount(() => clearTimeout(recentTimer))
+
+/** Where the open listing sits in the list, for "3 of 48" and stepping to its neighbours */
+const position = computed(() => {
+  const i = selected.value ? rows.value.findIndex((x) => x.v.id === selected.value!.id) : -1
+  return i < 0 ? null : { index: i, total: rows.value.length }
+})
+function step(by: 1 | -1) {
+  const next = position.value && rows.value[position.value.index + by]
+  if (next) select(next.v.id, { zoom: true })
+}
 
 // Also once the map arrives: it loads on its own, so a shared listing's data can be ready before there's a map to move
 watch(
@@ -258,17 +292,16 @@ const hasFilters = computed(() => {
   const s = search.value
   return !!s.q || !!s.cat || !!s.disc || !!s.field || !!s.src || !!s.dl || !!s.saved || !!s.fresh
 })
-const clearSearchAndFilters = () =>
-  set({
-    q: undefined,
-    cat: undefined,
-    disc: undefined,
-    field: undefined,
-    src: undefined,
-    dl: undefined,
-    saved: undefined,
-    fresh: undefined,
-  })
+const clearSearchAndFilters = () => set({ q: undefined, ...NO_FILTERS })
+
+function openFilters(section: FilterSection | null) {
+  filterSection.value = section
+  filtersOpen.value = true
+}
+// Done filtering: raise the results from their peek, so you see what the filters left
+function onFiltersDone() {
+  if (!isDesktop.value && !search.value.sel && isPeek(snap.value)) snap.value = SNAP_HALF
+}
 const errorMessage = computed(() => (error.value ? String((error.value as Error).message ?? error.value) : ""))
 
 const panelW = computed(() => (view.value === "table" ? TABLE_W : PANEL_W))
@@ -350,8 +383,10 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
         <ResultsList
           v-else
           :rows="rows"
+          :sort-key="sortKey"
           :selected-id="search.sel"
           :hovered-id="hoveredId"
+          :recent-id="recentId"
           :loading="isLoading"
           @select="selectFromList"
           @hover="hoveredId = $event"
@@ -400,9 +435,11 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
             :v="selected"
             :version="version"
             :nearby="nearby"
+            :position="position"
             variant="panel"
             @close="select(null)"
             @select="selectFromList"
+            @step="step"
             @show-on-map="camera.flyTo(selected.lng, selected.lat, Math.max(camera.getZoom(), 11))"
           />
         </aside>
@@ -435,7 +472,9 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
               :source-ids="snapshotSources"
               :saved-count="saved.size"
               :fresh-count="freshCount"
+              sheet
               class="px-0.5 [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)]"
+              @open="openFilters"
             />
           </div>
         </div>
@@ -457,8 +496,11 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
           :version="version"
           :nearby="nearby"
           variant="sheet"
+          :position="position"
+          :peeked="isPeek(snap)"
           @close="select(null)"
           @select="selectFromList"
+          @step="step"
           @show-on-map="camera.flyTo(selected.lng, selected.lat, Math.max(camera.getZoom(), 11))"
         />
         <template v-else>
@@ -473,8 +515,10 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
             :search="search"
             :set="set"
             :show-view-toggle="false"
+            sheet
             @clear-group="group = null"
             @world="goRegion('world')"
+            @sort="sortOpen = true"
           />
           <RegionNav
             :counts="regionCounts"
@@ -486,9 +530,12 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
           <div class="border-t border-default" />
           <LoadError v-if="error && !items.length" :message="errorMessage" />
           <ResultsList
+            v-model:offset="listOffset"
             :rows="rows"
+            :sort-key="sortKey"
             :selected-id="search.sel"
             :hovered-id="hoveredId"
+            :recent-id="recentId"
             :loading="isLoading"
             @select="selectFromList"
             @hover="hoveredId = $event"
@@ -499,6 +546,20 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
           </ResultsList>
         </template>
       </MobileSheet>
+
+      <FilterSheet
+        v-model:open="filtersOpen"
+        :section="filterSection"
+        :search="search"
+        :set="set"
+        :facets="facets"
+        :source-ids="snapshotSources"
+        :saved-count="saved.size"
+        :fresh-count="freshCount"
+        :result-count="rows.length"
+        @done="onFiltersDone"
+      />
+      <SortSheet v-model:open="sortOpen" :sort-key="sortKey" :has-query="!!search.q" :search="search" :set="set" />
     </template>
   </main>
 </template>

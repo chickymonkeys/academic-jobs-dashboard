@@ -1,36 +1,104 @@
 <script setup lang="ts">
-import { computed, ref, watch, type ComponentPublicInstance } from "vue"
-import { useVirtualizer } from "@tanstack/vue-virtual"
-import type { Indexed } from "@/features/filters/filtering"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from "vue"
+import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/vue-virtual"
+import type { Indexed, SortKey } from "@/features/filters/filtering"
 import JobRow from "./JobRow.vue"
+import { buildEntries } from "./sections"
 
-const props = defineProps<{ rows: Indexed[]; selectedId?: string; hoveredId: string | null; loading: boolean }>()
+const props = defineProps<{
+  rows: Indexed[]
+  sortKey: SortKey
+  selectedId?: string
+  hoveredId: string | null
+  loading: boolean
+  /** The listing last opened, ringed for a moment when the list comes back so you can find your place */
+  recentId?: string | null
+}>()
 const emit = defineEmits<{ select: [id: string]; hover: [id: string | null] }>()
+/** Scroll position, kept by the parent while the list is swapped out for a listing's details (mobile sheet) */
+const offset = defineModel<number>("offset", { default: 0 })
+
+const HEADER_H = 34
+const entries = computed(() => buildEntries(props.rows, props.sortKey))
+const headerIdx = computed(() => entries.value.flatMap((e, i) => (e.kind === "header" ? [i] : [])))
+const entryOfRow = computed(() => {
+  const m = new Map<string, number>()
+  entries.value.forEach((e, i) => e.kind === "row" && m.set(e.row.v.id, i))
+  return m
+})
+
+const headerAt = (i: number) => {
+  const e = entries.value[i]
+  return e?.kind === "header" ? e.section : undefined
+}
+const rowAt = (i: number) => {
+  const e = entries.value[i]
+  return e?.kind === "row" ? e.row.v : undefined
+}
+
+// The section header above the first visible row stays pinned, so you always know which stretch of the calendar you're in.
+// The extractor runs inside the virtualizer's own bookkeeping, so it notes the pinned header in a plain variable
+// and `activeHeader` reads it back once the visible items are known.
+let pinned = -1
+const rangeExtractor = (range: Range) => {
+  pinned = -1
+  for (const i of headerIdx.value) if (i <= range.startIndex) pinned = i
+  const next = new Set([...(pinned >= 0 ? [pinned] : []), ...defaultRangeExtractor(range)])
+  return [...next].sort((a, b) => a - b)
+}
 
 const parent = ref<HTMLElement | null>(null)
+// In the mobile sheet the scroller runs on below the screen edge; its bottom padding says by how much, and a row
+// brought into view has to clear that, not just the scroller's own bottom
+const bottomInset = ref(0)
 const virtualizer = useVirtualizer(
   computed(() => ({
-    count: props.rows.length,
+    count: entries.value.length,
     getScrollElement: () => parent.value,
-    estimateSize: () => 96,
+    estimateSize: (i: number) => (entries.value[i]?.kind === "header" ? HEADER_H : 96),
     overscan: 8,
-    getItemKey: (i: number) => props.rows[i]!.v.id,
+    getItemKey: (i: number) => {
+      const e = entries.value[i]!
+      return e.kind === "header" ? `h:${e.section.key}` : e.row.v.id
+    },
+    rangeExtractor,
+    // Jumping to a row clears the pinned header, so the row isn't tucked under it
+    scrollPaddingStart: headerIdx.value.length ? HEADER_H : 0,
+    scrollPaddingEnd: bottomInset.value,
   })),
 )
 const items = computed(() => virtualizer.value.getVirtualItems())
+const activeHeader = computed(() => {
+  void items.value
+  return pinned
+})
 const measure = (el: Element | ComponentPublicInstance | null) => {
   if (el instanceof Element) virtualizer.value.measureElement(el)
+}
+
+async function reveal(id: string | null | undefined) {
+  const i = id ? entryOfRow.value.get(id) : undefined
+  if (i == null || !parent.value) return
+  bottomInset.value = parseFloat(getComputedStyle(parent.value).paddingBottom) || 0
+  await nextTick()
+  virtualizer.value.scrollToIndex(i, { align: "auto" })
 }
 
 // Map → list: keep the selected row in view when it was picked on the map.
 watch(
   () => props.selectedId,
-  (id) => {
-    if (!id) return
-    const i = props.rows.findIndex((r) => r.v.id === id)
-    if (i >= 0) virtualizer.value.scrollToIndex(i, { align: "auto" })
-  },
+  (id) => void reveal(id),
 )
+
+// Coming back from a listing's details: the list picks up where you left it, with the listing you opened in view
+onMounted(async () => {
+  await nextTick()
+  if (offset.value > 0) virtualizer.value.scrollToOffset(offset.value)
+  if (props.recentId) requestAnimationFrame(() => void reveal(props.recentId))
+})
+onBeforeUnmount(() => {
+  offset.value = virtualizer.value.scrollOffset ?? 0
+})
 </script>
 
 <template>
@@ -57,23 +125,43 @@ watch(
     data-vaul-no-drag
   >
     <div role="list" aria-label="Positions" class="relative" :style="{ height: `${virtualizer.getTotalSize()}px` }">
-      <div
-        v-for="item in items"
-        :key="String(item.key)"
-        :ref="measure"
-        role="listitem"
-        :data-index="item.index"
-        class="absolute top-0 left-0 w-full py-0.5"
-        :style="{ transform: `translateY(${item.start}px)` }"
-      >
-        <JobRow
-          :v="rows[item.index]!.v"
-          :selected="rows[item.index]!.v.id === selectedId"
-          :hovered="rows[item.index]!.v.id === hoveredId"
-          @select="emit('select', $event)"
-          @hover="emit('hover', $event)"
-        />
-      </div>
+      <template v-for="item in items" :key="String(item.key)">
+        <!-- Section header: the pinned one sits in flow (sticky), the rest scroll past like rows -->
+        <div
+          v-if="headerAt(item.index)"
+          :ref="measure"
+          role="presentation"
+          :data-index="item.index"
+          class="top-0 left-0 z-10 w-full bg-default/95 px-4 backdrop-blur-sm"
+          :class="item.index === activeHeader ? 'sticky' : 'absolute'"
+          :style="item.index === activeHeader ? undefined : { transform: `translateY(${item.start}px)` }"
+        >
+          <h3 class="flex h-[34px] items-center gap-1.5 border-b border-default text-xs font-semibold">
+            <UIcon :name="headerAt(item.index)!.icon" class="size-3.5 shrink-0" :class="headerAt(item.index)!.tone" aria-hidden="true" />
+            <span class="text-highlighted">{{ headerAt(item.index)!.label }}</span>
+            <span class="ml-auto font-normal text-muted tabular-nums">
+              {{ headerAt(item.index)!.count }}<span class="sr-only"> positions</span>
+            </span>
+          </h3>
+        </div>
+        <div
+          v-else-if="rowAt(item.index)"
+          :ref="measure"
+          role="listitem"
+          :data-index="item.index"
+          class="absolute top-0 left-0 w-full py-0.5"
+          :style="{ transform: `translateY(${item.start}px)` }"
+        >
+          <JobRow
+            :v="rowAt(item.index)!"
+            :selected="rowAt(item.index)!.id === selectedId"
+            :hovered="rowAt(item.index)!.id === hoveredId"
+            :recent="rowAt(item.index)!.id === recentId"
+            @select="emit('select', $event)"
+            @hover="emit('hover', $event)"
+          />
+        </div>
+      </template>
     </div>
   </div>
 </template>
