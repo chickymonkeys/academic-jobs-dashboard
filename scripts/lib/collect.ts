@@ -43,13 +43,16 @@ export async function collect(
   if (!offline && partial == null && ageHours < (adapter.refreshHours ?? 0)) {
     console.log(`· ${adapter.id}: cached payload is ${ageHours.toFixed(1)} h old, refreshes every ${adapter.refreshHours} h`)
   } else if (!offline) {
+    // A cached payload that no longer parses (a run cut off while writing it) has nothing to lend this one,
+    // and handing it over would make the adapter fail before it asks the source
+    const before = cached ? listingsIn(adapter, cached.raw) : null
     try {
       const reasons: string[] = []
-      const raw = await adapter.fetchRaw(cached?.raw ?? null, (reason) => {
+      const raw = await adapter.fetchRaw(before == null ? null : cached!.raw, (reason) => {
         reasons.push(reason)
         console.warn(`! ${adapter.id}: ${reason}`)
       })
-      const drafts = parseFresh(adapter, raw, cached?.raw ?? null)
+      const drafts = parseFresh(adapter, raw, before ?? 0)
       await writeFile(rawFile, raw)
       if (reasons.length) await writeFile(partialFile, reasons.join("; "))
       else await rm(partialFile, { force: true })
@@ -78,23 +81,22 @@ export async function collect(
 }
 
 /** A fresh payload's listings, or why it should not replace the cached one */
-function parseFresh(adapter: SourceAdapter, raw: string, cachedRaw: string | null): Draft[] {
+function parseFresh(adapter: SourceAdapter, raw: string, cachedCount: number): Draft[] {
   let drafts: Draft[]
   try {
     drafts = adapter.parse(raw)
   } catch (e) {
     throw new Error(`unreadable answer (${(e as Error).message})`)
   }
-  if (!drafts.length && cachedRaw != null && countOf(adapter, cachedRaw) > 0) {
-    throw new Error("answered with no listings")
-  }
+  if (!drafts.length && cachedCount > 0) throw new Error("answered with no listings")
   return drafts
 }
 
-function countOf(adapter: SourceAdapter, raw: string) {
+/** How many listings a payload holds, or null when it doesn't parse */
+function listingsIn(adapter: SourceAdapter, raw: string): number | null {
   try {
     return adapter.parse(raw).length
   } catch {
-    return 0
+    return null
   }
 }

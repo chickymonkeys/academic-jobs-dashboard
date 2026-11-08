@@ -76,8 +76,9 @@ export const jobsAcUkAdapter: SourceAdapter = {
     const prior = previous ? (JSON.parse(previous) as Raw) : null
     const cards = new Map<string, string>()
     const disciplines: Record<string, Discipline[]> = {}
-    const add = (code: string, card: string, discipline: Discipline) => {
-      cards.set(code, card)
+    // A card carried over from the previous run never replaces the one a search found this run
+    const add = (code: string, card: string, discipline: Discipline, carried = false) => {
+      if (!carried || !cards.has(code)) cards.set(code, card)
       const tags = (disciplines[code] ??= [])
       if (!tags.includes(discipline)) tags.push(discipline)
     }
@@ -90,7 +91,7 @@ export const jobsAcUkAdapter: SourceAdapter = {
         // The facet's cards as the previous run found them (payloads from before the politics search: economics)
         for (const card of prior?.cards ?? []) {
           const code = codeOf(card)
-          if (code && (prior?.disciplines?.[code] ?? ["econ"]).includes(discipline)) add(code, card, discipline)
+          if (code && (prior?.disciplines?.[code] ?? ["econ"]).includes(discipline)) add(code, card, discipline, true)
         }
       }
     }

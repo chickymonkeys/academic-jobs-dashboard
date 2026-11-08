@@ -74,6 +74,8 @@ export function politeClient(gapMs: number, options: ClientOptions = {}) {
           problem = `${wrong} (HTTP ${res.status}${title ? `, page "${title}"` : ""})`
         } else {
           await res.body?.cancel().catch(() => {})
+          // Not found is the host answering about this page, so it is up again; a 403 may be a blanket block
+          if (res.status === 404 || res.status === 410) failedInRow = 0
           if (res.status !== 429 && res.status < 500) throw new Refused(`HTTP ${res.status} for ${url}`)
           problem = `HTTP ${res.status}`
           asked = retryAfterMs(res.headers.get("retry-after"))

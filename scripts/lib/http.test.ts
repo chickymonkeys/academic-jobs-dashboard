@@ -115,4 +115,26 @@ describe("politeClient", () => {
     for (let i = 0; i < 3; i++) await assert.rejects(get(`${base}/x`), /HTTP 404/)
     assert.equal(await get(`${base}/ok`), "fine")
   })
+
+  it("takes a 404 after a failure as the host answering again, and gives the next request its retries", async () => {
+    const get = client(1)
+    script.set("/down", [{ status: 503 }])
+    script.set("/gone", [{ status: 404 }])
+    script.set("/flaky", [{ status: 503 }, { body: "fine" }])
+    await assert.rejects(quiet(() => get(`${base}/down`)), /HTTP 503/)
+    await assert.rejects(get(`${base}/gone`), /HTTP 404/)
+    assert.equal(await quiet(() => get(`${base}/flaky`)), "fine")
+    assert.equal(hits.get("/flaky"), 2)
+  })
+
+  it("does not take a 403 after a failure as the host being back", async () => {
+    const get = client(1)
+    script.set("/down", [{ status: 503 }])
+    script.set("/blocked", [{ status: 403 }])
+    script.set("/flaky", [{ status: 503 }, { body: "fine" }])
+    await assert.rejects(quiet(() => get(`${base}/down`)), /HTTP 503/)
+    await assert.rejects(get(`${base}/blocked`), /HTTP 403/)
+    await assert.rejects(quiet(() => get(`${base}/flaky`)), /HTTP 503/)
+    assert.equal(hits.get("/flaky"), 1)
+  })
 })

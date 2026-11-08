@@ -20,6 +20,8 @@ const PADOVA = "/profcalls.php/public/job/id_job/153001"
 const BERGAMO_PHD = "/doctorate.php/public/fellowship/id_fellow/319659"
 const POLITO_PHD = "/doctorate.php/public/fellowship/id_fellow/319081"
 const BOCCONI_PHD = "/doctorate.php/public/fellowship/id_fellow/319462"
+const MIXED_PHD = "/doctorate.php/public/fellowship/id_fellow/319500"
+const COVERED_PHD = "/doctorate.php/public/fellowship/id_fellow/319501"
 
 const raw = JSON.stringify({
   fetchedAt: "2026-11-08T12:00:00Z",
@@ -40,6 +42,8 @@ const raw = JSON.stringify({
       entry(BERGAMO_PHD, "Univ. BERGAMO", "Terzo bando di concorso per l'ammissione ai corsi di dottorato di ricerca - XLII Ciclo"),
       entry(POLITO_PHD, "Politecnico di TORINO", "Bando di concorso per l'ammissione ai corsi di dottorato di ricerca (42° ciclo)"),
       entry(BOCCONI_PHD, "Univ. Bocconi MILANO", "Bando di concorso per l'ammissione ai dottorati di ricerca 43° ciclo"),
+      entry(MIXED_PHD, "Univ. TRENTO", "Bando di ammissione ai corsi di dottorato di ricerca - 42° ciclo"),
+      entry(COVERED_PHD, "Univ. PAVIA", "Bando di ammissione ai corsi di dottorato di ricerca - 42° ciclo"),
     ].join(""),
   },
   details: {
@@ -81,6 +85,21 @@ const raw = JSON.stringify({
         ["G.S.D.", "14/GSPS-02 - SCIENZA POLITICA"],
       ]),
     ),
+    // One curriculum names a group, another a whole area
+    [MIXED_PHD]: detailFacts(
+      page([
+        ["G.S.D.", "13/ECON-01 - ECONOMIA POLITICA"],
+        ["Settore Concorsuale", "14 - Scienze politiche e sociali"],
+        ["Settore Concorsuale", "11 - Scienze storiche, filosofiche, pedagogiche e psicologiche"],
+      ]),
+    ),
+    // The group's own area is named too
+    [COVERED_PHD]: detailFacts(
+      page([
+        ["G.S.D.", "13/ECON-03 - SCIENZA DELLE FINANZE"],
+        ["Settore Concorsuale", "13 - Scienze economiche e statistiche"],
+      ]),
+    ),
   },
 })
 const drafts = new Map(murAdapter.parse(raw).map((d) => [d.url.replace("https://bandi.mur.gov.it", ""), d]))
@@ -120,6 +139,20 @@ describe("MUR calls", () => {
     assert.ok(bocconi.fields.includes("H"), "public finance carries its field")
 
     assert.equal(drafts.has(POLITO_PHD), false)
+  })
+
+  it("counts a whole area alongside groups when the groups don't cover its discipline", () => {
+    const d = drafts.get(MIXED_PHD)
+    assert.ok(d)
+    assert.deepEqual(d.disciplines, ["econ", "polsci"])
+    assert.equal(d.title, "PhD position in Economics and political science")
+  })
+
+  it("doesn't widen a call's groups with the area they belong to", () => {
+    const d = drafts.get(COVERED_PHD)
+    assert.ok(d)
+    assert.equal(d.title, "PhD position in Public finance")
+    assert.deepEqual(d.disciplines, ["econ"])
   })
 })
 

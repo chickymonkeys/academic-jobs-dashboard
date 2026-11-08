@@ -82,6 +82,24 @@ describe("collect", () => {
     assert.equal(await readFile(rawFile(), "utf8"), '["Cached"]')
   })
 
+  it("doesn't hand the adapter a cached payload that no longer parses, and replaces it", async () => {
+    await writeFile(rawFile(), '["Cut off mid-wri')
+    let handed: string | null | undefined
+    const { drafts, status } = await quiet(() =>
+      collect(
+        source(async (previous) => {
+          handed = previous
+          return '["A"]'
+        }),
+        live(),
+      ),
+    )
+    assert.equal(handed, null)
+    assert.deepEqual(titles(drafts), ["A"])
+    assert.equal(status.ok, true)
+    assert.equal(await readFile(rawFile(), "utf8"), '["A"]')
+  })
+
   it("takes an empty answer from a source that had nothing before either", async () => {
     await cache([])
     const { drafts, status } = await quiet(() => collect(source(async () => "[]"), live()))

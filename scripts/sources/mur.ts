@@ -117,7 +117,8 @@ type Raw = {
   lists: Record<string, string>
   /**
    * Detail-page facts by call path, for our calls and for calls whose list line names no code (for those
-   * that turn out not to be ours, only the codes); null = page had none
+   * that turn out not to be ours, only the codes, or {} when the page names none). null, found in older
+   * payloads, is a page that held no facts at all: it is read again.
    */
   details: Record<string, Facts | null>
 }
@@ -170,15 +171,22 @@ export const murAdapter: SourceAdapter = {
         const known = codesOf(e).length > 0
         // A list line that names codes, none of them ours, settles it
         if (!known && e.codes) continue
-        if (e.href in before) details[e.href] = before[e.href]
+        const kept = before[e.href]
+        if (kept) details[e.href] = kept
         else (known ? ours : unsure).push(e)
       }
     }
     for (const e of [...ours, ...unsure].slice(0, DETAIL_BUDGET)) {
       try {
         const facts = detailFacts(await get(`${BASE}${e.href}`))
+        // A page with no facts at all is not the call's (an error or maintenance page served as 200): kept, it
+        // would settle the call for good, so it is left for the next run to read again
+        if (!facts) {
+          console.warn(`  MUR ${e.href}: no call details on the page; read again next run`)
+          continue
+        }
         // A call that isn't ours keeps only the codes that say so
-        details[e.href] = codesOf(e, facts).length ? facts : facts?.[CODES_FACT] ? { [CODES_FACT]: facts[CODES_FACT] } : null
+        details[e.href] = codesOf(e, facts).length ? facts : facts[CODES_FACT] ? { [CODES_FACT]: facts[CODES_FACT] } : {}
       } catch (err) {
         console.warn(`  MUR ${e.href}: ${(err as Error).message}`)
       }
@@ -237,7 +245,9 @@ function entries(html: string): Entry[] {
 
 /**
  * The listed codes a call names: in its list line (one per post), failing that in its title, failing that
- * on its detail page, as groups or sectors, or else as whole areas (13, 14) when it names no more than a few
+ * on its detail page, as groups or sectors, and as whole areas (13, 14) when it names no more than a few.
+ * A page can name groups for one curriculum and a whole area for another: an area counts for a discipline
+ * that no group already covers.
  */
 function codesOf(e: Entry, facts?: Facts | null): Code[] {
   const named = (s: string | undefined) => (s ? CODES.filter((c) => c.re.test(s)) : [])
@@ -245,11 +255,15 @@ function codesOf(e: Entry, facts?: Facts | null): Code[] {
   const inTitle = named(e.title)
   if (inTitle.length) return inTitle
   const detail = facts?.[CODES_FACT]
+  if (!detail) return []
   const listed = named(detail)
-  if (listed.length || !detail) return listed
   const lines = detail.split("; ")
-  if (lines.filter((l) => /^\d{2} - /.test(l)).length > MAX_AREAS) return []
-  return Object.values(AREAS).filter((a) => lines.some((l) => a.re.test(l)))
+  // A whole university's round, open to (nearly) every area, is in none of ours in particular
+  if (lines.filter((l) => /^\d{2} - /.test(l)).length > MAX_AREAS) return listed
+  const areas = Object.values(AREAS).filter(
+    (a) => !listed.some((c) => c.discipline === a.discipline) && lines.some((l) => a.re.test(l)),
+  )
+  return [...listed, ...areas]
 }
 
 /** The call's own facts, and the codes it names ("13/ECON-01 - ECONOMIA POLITICA; 13 - Scienze economiche…") */
