@@ -5,9 +5,9 @@
 
 A map-first dashboard of academic vacancies in economics, with political science and public policy alongside, aggregated live from **EconJobMarket (EJM)**, the **AEA's Job Openings for Economists (JOE)**, **jobs.ac.uk**, **Times Higher Education (THE)**, the **Italian ministry's calls portal (MUR)**, **APPAM Career Connections**, **Academic Jobs Online (AJO)**, **AcademicTransfer** and **HigherEdJobs (HEJ)**.
 
-Stack: Vue 3 · TypeScript · Vite · **Nuxt UI** (Tailwind v4, Reka UI) · **MapLibre GL** (CARTO basemaps) · **deck.gl** (interleaved) · **TanStack Query / Virtual** · Vue Router · Zod · **Void** → Cloudflare Workers, private behind Cloudflare Access.
+Stack: Vue 3 · TypeScript · Vite · **Nuxt UI** (Tailwind v4, Reka UI) · **MapLibre GL** (CARTO basemaps) · **deck.gl** (interleaved) · **TanStack Query / Virtual** · Vue Router · Zod · **Void** → Cloudflare Workers.
 
-**Personal use only.** None of these boards' terms allow republishing their listings, and AEA JOE and THE forbid automated collection without written permission (see [Terms of use](#terms-of-use)). The deployment is therefore private, behind Cloudflare Access, and the snapshot is never committed or published. Don't make the Worker public or share the snapshot without the boards' written permission.
+**Personal use only.** None of these boards' terms allow republishing their listings, and AEA JOE and THE forbid automated collection without written permission (see [Terms of use](#terms-of-use)). The deployment is a personal tool at an unlisted workers.dev address, and the snapshot is never committed or published. Don't link or share the address or the snapshot without the boards' written permission; the workers.dev subdomain is kept in a repository secret so the public Actions logs don't print it.
 
 Needs Node 24 and pnpm (`corepack enable` picks up the version pinned in `package.json`).
 
@@ -147,16 +147,16 @@ What each board's terms say about reuse, as read on 2026-11-08 (not legal advice
 | AJO | No terms, only "All Rights Reserved"; `robots.txt` asks for a 5 s crawl delay |
 | AcademicTransfer | The published terms are a privacy statement only; `robots.txt` allows job pages at a 10 s crawl delay |
 
-Beyond the boards' terms: under the EU database right, copying and indexing a job board's database and letting people search it on another site is "extraction" and "re-utilisation", which the board can stop when it puts its investment at risk (CJEU C-762/19, *CV-Online Latvia v Melons*). And about 38% of postings carry a named contact's email address, which publishing would make personal data the site's owner is responsible for under the GDPR. A private deployment used only by its owner republishes neither.
+Beyond the boards' terms: under the EU database right, copying and indexing a job board's database and letting people search it on another site is "extraction" and "re-utilisation", which the board can stop when it puts its investment at risk (CJEU C-762/19, *CV-Online Latvia v Melons*). And about 38% of postings carry a named contact's email address, which publishing would make personal data the site's owner is responsible for under the GDPR. A deployment used only by its owner republishes neither.
 
-## Hosting (private, on Cloudflare)
+## Hosting (Cloudflare, provisioned by Void)
 
-[Void](https://void.cloud) builds the app and deploys it to Cloudflare Workers, creating the Worker on the first run; Cloudflare Access keeps it private. A free Cloudflare account is enough.
+[Void](https://void.cloud) builds the app and deploys it to Cloudflare Workers, creating the Worker on the first run. A free Cloudflare account is enough.
 
 1. **Create a free account** at [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) and verify the email.
 2. **Choose a workers.dev subdomain:** open **Workers & Pages** in the dashboard once and pick a name, say `econ-atlas`. Void can't deploy to an account without one.
 3. **First deploy, from your machine:** `pnpm ingest`, then `pnpm run deploy:cloudflare`. The browser opens to sign in to Cloudflare. Void builds the app, creates a Worker named after `package.json`'s `name`, uploads `dist/client` (app + `data/`) to Workers Static Assets, and prints the URL: `https://academic-jobs-dashboard.<subdomain>.workers.dev`. Later runs update the same Worker. A deploy from your machine ships your local snapshot, until CI replaces it at its next run.
-4. **Make it private with Cloudflare Access.** The workers.dev URL is public until this is done, so do it right after the first deploy:
+4. **Make it private with Cloudflare Access (optional).** The workers.dev URL is public but unlisted; to require a login instead:
    1. Turn on Zero Trust once: open **Zero Trust** in the dashboard, choose a team name and the **Free** plan. It asks for payment details but doesn't charge.
    2. Open **Workers & Pages → academic-jobs-dashboard → Access → Protect this Worker behind Access**, choose **All traffic** (the workers.dev URL and every preview URL), pick the **Cloudflare account** policy (members of your Cloudflare account, so only you if you're its only member) and select **Apply Access**.
    3. Optional: to allow one email address instead, edit the application under **Zero Trust → Access → Applications** and give its Allow policy an **Emails** rule.
@@ -167,7 +167,7 @@ Beyond the boards' terms: under the EU database right, copying and indexing a jo
 
    ```bash
    gh secret set CLOUDFLARE_API_TOKEN                          # paste the token when prompted
-   gh variable set CLOUDFLARE_WORKERS_SUBDOMAIN --body econ-atlas
+   gh secret set CLOUDFLARE_WORKERS_SUBDOMAIN --body econ-atlas   # a secret, so the logs mask it
    gh workflow run deploy                                      # first CI deploy
    ```
 
@@ -182,7 +182,7 @@ Beyond the boards' terms: under the EU database right, copying and indexing a jo
 
    Then create the ruleset under **Settings → Rules → Rulesets**: target the default branch, add **Repository admin** (for pull requests only) and **Deploy keys** (always) to the bypass list, and turn on **Restrict deletions**, **Block force pushes** and **Require a pull request before merging** with one approval and code owner review.
 
-**What the free plan covers:** Void's static deploy routes every request through the Worker (`run_worker_first: true`), so each file a visit loads (about 15, plus a `meta.json` poll every 2 minutes while the tab is open) counts toward the 100,000 requests a day of Workers Free, after which requests fail until midnight UTC. That is plenty for one person and would not survive public traffic, one more reason to keep it private. The other limit to watch is 20,000 files per deploy on Free; each listing adds one `data/details/*.json`, and there are about 1,500 today.
+**What the free plan covers:** Void's static deploy routes every request through the Worker (`run_worker_first: true`), so each file a visit loads (about 15, plus a `meta.json` poll every 2 minutes while the tab is open) counts toward the 100,000 requests a day of Workers Free, after which requests fail until midnight UTC. That is plenty for one person and would not survive public traffic, one more reason to keep it unlisted. The other limit to watch is 20,000 files per deploy on Free; each listing adds one `data/details/*.json`, and there are about 1,500 today.
 
 **Growing a backend:** put API routes in `routes/`, scheduled jobs in `crons/`, a Drizzle schema in `db/`, then drop `inference` from `void.config.ts`. Void infers the D1, KV and R2 bindings from the code and provisions them on the next deploy. One caveat if the ingest moves into a cron: parsing the feeds takes well over 10 ms of CPU, more than Workers Free allows per invocation (10 ms), so that needs Workers Paid.
 

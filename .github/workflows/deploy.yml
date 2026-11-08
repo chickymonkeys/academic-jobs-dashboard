@@ -1,17 +1,18 @@
 # Fetches the listing sources (scripts/ingest.ts), builds the app and deploys it to Cloudflare Workers
 # with Void: on every push to main and every 3 hours. The MUR portal and AcademicTransfer are re-read at most
 # every 12 hours; between their refreshes the run reuses the cached payload. The snapshot (public/data) is never
-# committed; it lives only in the deployed site, which is private behind Cloudflare Access: the boards' terms don't
-# allow republishing their listings (see "Terms of use" in the README). The build is never uploaded as an artifact,
-# which anyone signed in to GitHub could download from this public repository. Open tabs pick up a new snapshot within
-# META_POLL_MS because the client polls /data/meta.json for a new version.
+# committed; it lives only in the deployed site, a personal tool at an unlisted address: the boards' terms don't
+# allow republishing their listings (see "Terms of use" in the README). So the build is never uploaded as an artifact,
+# and the workers.dev subdomain is a secret, not a variable: this repository's Actions logs are public, and GitHub
+# masks a secret wherever it appears in them, including in the URL that `void deploy` prints. Open tabs pick up a new
+# snapshot within META_POLL_MS because the client polls /data/meta.json for a new version.
 #
 # Only pipeline state without personal data is committed back: data/seen.json (first-seen dates,
 # the "new" signal) and data/geocache.json (institution coordinates). main is protected by a ruleset
 # (pull requests only), which deploy keys bypass, so the state is pushed with one (INGEST_DEPLOY_KEY).
 #
-# Setup (once): repository secret CLOUDFLARE_API_TOKEN (Edit Cloudflare Workers template) and
-# repository variable CLOUDFLARE_WORKERS_SUBDOMAIN (your <name>.workers.dev). The account comes
+# Setup (once): repository secrets CLOUDFLARE_API_TOKEN (Edit Cloudflare Workers template) and
+# CLOUDFLARE_WORKERS_SUBDOMAIN (your <name>.workers.dev). The account comes
 # from void.lock.json; set CLOUDFLARE_ACCOUNT_ID only to deploy somewhere else. With main protected,
 # also secret INGEST_DEPLOY_KEY: the private half of a deploy key with write access (see README).
 name: deploy
@@ -31,7 +32,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}
+      CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ secrets.CLOUDFLARE_WORKERS_SUBDOMAIN }}
     steps:
       # Git runs with the deploy key, which may push to the protected main; without the secret, the workflow token
       - uses: actions/checkout@v6
