@@ -2,8 +2,9 @@ import { XMLParser } from "fast-xml-parser"
 import { findCountry } from "../../src/domain/geo"
 import { classifyCategory, fieldsFromText } from "../../src/domain/taxonomy"
 import type { Discipline } from "../../src/domain/vacancy"
+import { politeClient } from "../lib/http"
 import { clean, dayFromText, tidyPlace } from "../lib/text"
-import { USER_AGENT, type Draft, type SourceAdapter } from "./types"
+import type { Draft, SourceAdapter } from "./types"
 
 const BASE = "https://www.higheredjobs.com"
 /** Faculty category feeds, with the discipline and field each one implies */
@@ -25,13 +26,28 @@ export const hejAdapter: SourceAdapter = {
   homepage: `${BASE}/faculty/search.cfm?JobCat=81`,
   rawExt: "json",
 
-  async fetchRaw() {
+  /**
+   * The site answers bots it doesn't like with a challenge page, served as 200: that is not a feed, so it is
+   * retried, and a feed that still fails is carried over from the previous payload instead of being emptied.
+   */
+  async fetchRaw(previous, degraded) {
+    const get = politeClient(1000)
+    const prior = previous ? (JSON.parse(previous) as Raw) : {}
     const raw: Raw = {}
+    const failed: string[] = []
     for (const cat of Object.keys(FEEDS)) {
-      const res = await fetch(`${BASE}/rss/categoryFeed.cfm?catID=${cat}`, { headers: { "User-Agent": USER_AGENT } })
-      if (!res.ok) throw new Error(`HigherEdJobs feed ${cat} HTTP ${res.status}`)
-      raw[cat] = await res.text()
+      try {
+        raw[cat] = await get(`${BASE}/rss/categoryFeed.cfm?catID=${cat}`, {
+          accept: "application/rss+xml, application/xml, */*",
+          check: (xml) => (xml.includes("<rss") ? null : "not an RSS feed"),
+        })
+      } catch (e) {
+        failed.push((e as Error).message)
+        if (prior[cat]) raw[cat] = prior[cat]
+      }
     }
+    if (failed.length === Object.keys(FEEDS).length) throw new Error(failed[0])
+    if (failed.length) degraded(`${failed.length} of ${Object.keys(FEEDS).length} category feeds (${failed.join("; ")})`)
     return JSON.stringify(raw)
   },
 

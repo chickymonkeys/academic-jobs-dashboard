@@ -1,7 +1,8 @@
 import { findCountry } from "../../src/domain/geo"
 import { classifyCategory, fieldsFromEjm } from "../../src/domain/taxonomy"
+import { politeClient } from "../lib/http"
 import { clean, htmlToBlocks, summarize, tidyPlace } from "../lib/text"
-import { USER_AGENT, type Draft, type SourceAdapter } from "./types"
+import type { Draft, SourceAdapter } from "./types"
 
 const FEED = "https://backend.econjobmarket.org/data/zz_public/json/Ads"
 
@@ -62,9 +63,11 @@ export const ejmAdapter: SourceAdapter = {
   rawExt: "json",
 
   async fetchRaw() {
-    const res = await fetch(FEED, { headers: { "User-Agent": USER_AGENT, Accept: "application/json" } })
-    if (!res.ok) throw new Error(`EJM feed HTTP ${res.status}`)
-    return res.text()
+    // A single request; the client brings retries, a timeout and the check that this is the feed
+    return politeClient(0)(FEED, {
+      accept: "application/json",
+      check: (body) => (body.trimStart().startsWith("[") ? null : "not the JSON list of ads"),
+    })
   },
 
   parse(raw) {

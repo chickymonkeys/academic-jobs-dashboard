@@ -2,8 +2,9 @@ import { XMLParser } from "fast-xml-parser"
 import { findCountry } from "../../src/domain/geo"
 import { classifyCategory, fieldsFromText } from "../../src/domain/taxonomy"
 import type { Block, Discipline } from "../../src/domain/vacancy"
+import { politeClient } from "../lib/http"
 import { clean, dayFromText, decodeEntities, summarize, textToBlocks, tidyPlace } from "../lib/text"
-import { USER_AGENT, type Draft, type SourceAdapter } from "./types"
+import type { Draft, SourceAdapter } from "./types"
 
 const BASE = "https://academicjobsonline.org/ajo"
 /** Every open listing, all disciplines; ours are picked out by each item's discipline list */
@@ -37,9 +38,11 @@ export const ajoAdapter: SourceAdapter = {
   rawExt: "xml",
 
   async fetchRaw() {
-    const res = await fetch(FEED, { headers: { "User-Agent": USER_AGENT } })
-    if (!res.ok) throw new Error(`AJO feed HTTP ${res.status}`)
-    return res.text()
+    // A single request; the client brings retries, a timeout and the check that this is the feed
+    return politeClient(0)(FEED, {
+      accept: "application/rss+xml, application/xml, */*",
+      check: (xml) => (xml.includes("<rdf:RDF") ? null : "not the RSS feed"),
+    })
   },
 
   parse(raw) {

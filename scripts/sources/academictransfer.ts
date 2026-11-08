@@ -50,8 +50,10 @@ export const academicTransferAdapter: SourceAdapter = {
 
   async fetchRaw(previous) {
     const get = politeClient(10_000)
-    const sitemap = await get(`${BASE}/sitemap-vacancies.xml`, "application/xml")
-    if (!sitemap.includes("<loc>")) throw new Error("AcademicTransfer: empty vacancy sitemap")
+    const sitemap = await get(`${BASE}/sitemap-vacancies.xml`, {
+      accept: "application/xml",
+      check: (xml) => (xml.includes("<loc>") ? null : "empty vacancy sitemap"),
+    })
     const urls: Raw["urls"] = {}
     for (const [, url, lang, id, slug] of sitemap.matchAll(/<loc>(https:\/\/[^<]+\/(en|nl)\/jobs\/(\d+)\/([^/<]+)\/)<\/loc>/g)) {
       // Prefer the English page when a vacancy is listed in both languages

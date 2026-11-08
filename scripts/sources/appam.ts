@@ -1,7 +1,8 @@
 import { findCountry } from "../../src/domain/geo"
 import { classifyCategory, fieldsFromText } from "../../src/domain/taxonomy"
+import { politeClient } from "../lib/http"
 import { clean, htmlToBlocks, summarize, tidyPlace } from "../lib/text"
-import { USER_AGENT, type Draft, type SourceAdapter } from "./types"
+import type { Draft, SourceAdapter } from "./types"
 
 /** APPAM Career Connections, the public policy association's job board (an mcjobboard.net site) */
 const BASE = "https://appam.mcjobboard.net"
@@ -37,22 +38,32 @@ export const appamAdapter: SourceAdapter = {
    * board longer than that is read in part.
    */
   async fetchRaw() {
-    const res = await fetch(`${BASE}/jobs`, { headers: { "User-Agent": USER_AGENT } })
-    if (!res.ok) throw new Error(`APPAM HTTP ${res.status}`)
-    const html = await res.text()
-    const state = html.match(/<script id="[^"]*" type="application\/json">([\s\S]*?)<\/script>/)?.[1]
-    if (!state) throw new Error("APPAM: no embedded results")
-    // Angular escapes the JSON as &q; &a; &s; &l; &g;
-    const json = state.replace(/&(q|a|s|l|g);/g, (_, c: string) => ({ q: '"', a: "&", s: "'", l: "<", g: ">" })[c]!)
-    const data = JSON.parse(json) as Record<string, { items?: AppamJob[]; totalCount?: number }>
-    const search = Object.entries(data).find(([k]) => k.includes("job/search"))?.[1]
-    if (!search?.items) throw new Error("APPAM: no job search results in the page")
-    return JSON.stringify({ fetchedAt: new Date().toISOString(), total: search.totalCount ?? search.items.length, items: search.items } satisfies Raw)
+    // A single request; the client brings retries, a timeout and the check that the page was rendered in full
+    const html = await politeClient(0)(`${BASE}/jobs`, {
+      check: (page) => (embeddedResults(page) ? null : "no job search results in the page"),
+    })
+    const { items, totalCount } = embeddedResults(html)!
+    return JSON.stringify({ fetchedAt: new Date().toISOString(), total: totalCount ?? items.length, items } satisfies Raw)
   },
 
   parse(raw) {
     return (JSON.parse(raw) as Raw).items.map(toDraft)
   },
+}
+
+/** The job search the server render embeds as transfer state, or null when the page came back without it */
+function embeddedResults(html: string): { items: AppamJob[]; totalCount?: number } | null {
+  const state = html.match(/<script id="[^"]*" type="application\/json">([\s\S]*?)<\/script>/)?.[1]
+  if (!state) return null
+  // Angular escapes the JSON as &q; &a; &s; &l; &g;
+  const json = state.replace(/&(q|a|s|l|g);/g, (_, c: string) => ({ q: '"', a: "&", s: "'", l: "<", g: ">" })[c]!)
+  try {
+    const data = JSON.parse(json) as Record<string, { items?: AppamJob[]; totalCount?: number }>
+    const search = Object.entries(data).find(([k]) => k.includes("job/search"))?.[1]
+    return search?.items ? { items: search.items, totalCount: search.totalCount } : null
+  } catch {
+    return null
+  }
 }
 
 const day = (ms: number | null | undefined) => (ms ? new Date(ms).toISOString().slice(0, 10) : null)

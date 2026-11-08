@@ -28,8 +28,13 @@ export interface SourceAdapter {
   refreshHours?: number
   /** Why the source is not read (its robots.txt or terms, say): the ingest skips it unless run with --enable=<id> */
   off?: string
-  /** `previous` is the last cached payload, so per-listing pages fetched before need not be fetched again */
-  fetchRaw(previous: string | null): Promise<string>
+  /**
+   * `previous` is the last cached payload: per-listing pages fetched before need not be fetched again, and a
+   * part of the source that fails this time (one list of several) can be carried over from it. Doing so is
+   * reported through `degraded`, which shows the source as degraded with that reason (see lib/collect.ts).
+   * Throwing leaves the whole source on its cached payload.
+   */
+  fetchRaw(previous: string | null, degraded: (reason: string) => void): Promise<string>
   parse(raw: string): Draft[]
 }
 

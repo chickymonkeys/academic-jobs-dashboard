@@ -6,6 +6,8 @@ import { ago } from "@/lib/dates"
 
 const props = defineProps<{ meta?: Meta; refreshing: boolean; crossListed: number }>()
 const healthy = computed(() => props.meta?.sources.every((s) => s.ok) ?? true)
+/** Errors name the URL that failed; its host says enough here (the full message is the tooltip, and in meta.json) */
+const readable = (error: string) => error.replace(/https?:\/\/([^/\s?#]+)[^\s;)]*/g, "$1")
 </script>
 
 <!-- Trust signal: how fresh the data is and which feeds are healthy, one click away -->
@@ -45,7 +47,9 @@ const healthy = computed(() => props.meta?.sources.every((s) => s.ok) ?? true)
               <div class="text-xs text-muted">
                 {{ s.count.toLocaleString() }} listings{{ s.fetchedAt ? ` · fetched ${ago(s.fetchedAt)}` : "" }}
               </div>
-              <div v-if="s.error" class="mt-1 text-xs text-soon">Using cached data: {{ s.error }}</div>
+              <div v-if="s.error" class="mt-1 text-xs text-soon wrap-anywhere" :title="s.error">
+                Using cached data: {{ readable(s.error) }}
+              </div>
             </div>
           </li>
         </ul>

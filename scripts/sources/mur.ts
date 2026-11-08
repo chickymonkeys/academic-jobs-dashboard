@@ -38,6 +38,7 @@ const LISTS: ReadonlyArray<{ key: string; url: string; role: string; category: C
       ["incarichipostdoc", "Post-doc position", "postdoc"],
       ["bandi", "Research grant (assegno di ricerca)", "postdoc"],
       ["incarichidiricerca", "Research assistant position", "predoc"],
+      ["doctorate", "PhD position", "predoc"],
     ] as const
   ).map(([section, role, category]) => ({
     key: section,
@@ -64,9 +65,31 @@ const CODES: ReadonlyArray<{ re: RegExp; discipline: Discipline; name: string; f
   { re: /\bAGRI-01\b|AGR\/?01\b|\b07\/A1\b/, discipline: "econ", name: "Agricultural economics", field: "Q" },
   { re: /\bGSPS-02\b|SPS\/?04\b|\b14\/A2\b/, discipline: "polsci", name: "Political science" },
 ]
+type Code = (typeof CODES)[number]
+
+/**
+ * Whole areas, for calls that name no group (PhD rounds, some research contracts): a call open to all of
+ * area 13 or 14 is open to economics or political science among the rest
+ */
+const AREAS: Record<string, Code> = {
+  "13": { re: /^13 - /, discipline: "econ", name: "Economics and statistics" },
+  "14": { re: /^14 - /, discipline: "polsci", name: "Political and social sciences" },
+}
+/** What a call open to several of our codes is in, by discipline */
+const DISCIPLINE_NAMES: Record<Code["discipline"], string> = {
+  econ: "Economics",
+  polsci: "Political science",
+  policy: "Public policy",
+}
+/** A call open to more areas than this (of 14) is a university's whole PhD round, not one in our fields */
+const MAX_AREAS = 6
 
 /** Detail pages fetched per run; the rest wait for the next run */
 const DETAIL_BUDGET = 120
+/** Detail rows naming the call's disciplines: its groups (13/ECON-01), sectors (ECON-01/A) or areas (13 - …) */
+const CODE_ROWS = /^(G\.S\.D\.?|S\.S\.D\.?|Settore Concorsuale)$/i
+/** Where the codes a detail page names are kept among its facts, "; "-separated */
+const CODES_FACT = "codes"
 /** Labels kept from a detail page: the call's own facts, not its contact people */
 const DETAIL_KEYS = [
   "Titolo del progetto di ricerca in italiano",
@@ -85,13 +108,19 @@ const DETAIL_KEYS = [
   "Città",
 ]
 
+/** `codes`: every code line the list gives the call, one per post, "; "-separated */
 type Entry = { href: string; university: string; title: string; codes: string; deadline: string | null }
+type Facts = Record<string, string>
 type Raw = {
   fetchedAt: string
   /** Each list's result markup, by list key */
   lists: Record<string, string>
-  /** Detail-page facts by call path; null = page had none */
-  details: Record<string, Record<string, string> | null>
+  /**
+   * Detail-page facts by call path, for our calls and for calls whose list line names no code (for those
+   * that turn out not to be ours, only the codes, or {} when the page names none). null, found in older
+   * payloads, is a page that held no facts at all: it is read again.
+   */
+  details: Record<string, Facts | null>
 }
 
 export const murAdapter: SourceAdapter = {
@@ -102,33 +131,64 @@ export const murAdapter: SourceAdapter = {
   // New calls appear once a day or so; the lists are re-read twice a day
   refreshHours: 12,
 
-  async fetchRaw(previous) {
+  /**
+   * Each list is its own search, and the portal's gateway gives up on a heavy one (HTTP 504 after 60 s) while
+   * the others still answer: a list that fails is carried over from the previous payload, so it doesn't
+   * take the other lists down with it. Only when every list fails does the whole source fall back.
+   */
+  async fetchRaw(previous, degraded) {
     const get = politeClient(3000)
+    const prior = previous ? (JSON.parse(previous) as Raw) : null
     const lists: Raw["lists"] = {}
+    const failed: Array<{ role: string; error: string }> = []
     for (const list of LISTS) {
-      const html = await get(list.url)
-      const start = html.indexOf('id="hiddenresult"')
-      if (start >= 0) lists[list.key] = html.slice(start, html.indexOf('id="Pagination"', start))
-      else if (html.includes("Non sono presenti bandi")) lists[list.key] = ""
-      else throw new Error(`MUR ${list.key}: result list not found`)
+      try {
+        lists[list.key] = resultList(
+          await get(list.url, { check: (html) => (resultList(html) == null ? "result list not found" : null) }),
+        )!
+      } catch (e) {
+        failed.push({ role: list.role, error: (e as Error).message })
+        // A list never read before stays empty until the portal answers
+        lists[list.key] = prior?.lists[list.key] ?? ""
+      }
+    }
+    if (failed.length === LISTS.length) throw new Error(failed[0].error)
+    if (failed.length) {
+      degraded(`${failed.length} of ${LISTS.length} call lists (${failed.map((f) => f.role).join("; ")}): ${failed[0].error}`)
     }
 
-    const before: Raw["details"] = previous ? ((JSON.parse(previous) as Raw).details ?? {}) : {}
+    // Detail pages: our calls' first, then those of calls whose list line names no code, to find out whether
+    // they are ours (the page names the call's group, sector or area). Pages read before are carried over.
+    const before: Raw["details"] = prior?.details ?? {}
     const details: Raw["details"] = {}
-    let budget = DETAIL_BUDGET
+    const seen = new Set<string>()
+    const ours: Entry[] = []
+    const unsure: Entry[] = []
     for (const html of Object.values(lists)) {
       for (const e of entries(html)) {
-        if (!codeOf(e) || e.href in details) continue
-        if (e.href in before) {
-          details[e.href] = before[e.href]
+        if (seen.has(e.href)) continue
+        seen.add(e.href)
+        const known = codesOf(e).length > 0
+        // A list line that names codes, none of them ours, settles it
+        if (!known && e.codes) continue
+        const kept = before[e.href]
+        if (kept) details[e.href] = kept
+        else (known ? ours : unsure).push(e)
+      }
+    }
+    for (const e of [...ours, ...unsure].slice(0, DETAIL_BUDGET)) {
+      try {
+        const facts = detailFacts(await get(`${BASE}${e.href}`))
+        // A page with no facts at all is not the call's (an error or maintenance page served as 200): kept, it
+        // would settle the call for good, so it is left for the next run to read again
+        if (!facts) {
+          console.warn(`  MUR ${e.href}: no call details on the page; read again next run`)
           continue
         }
-        if (budget-- <= 0) continue
-        try {
-          details[e.href] = detailFacts(await get(`${BASE}${e.href}`))
-        } catch (err) {
-          console.warn(`  MUR ${e.href}: ${(err as Error).message}`)
-        }
+        // A call that isn't ours keeps only the codes that say so
+        details[e.href] = codesOf(e, facts).length ? facts : facts[CODES_FACT] ? { [CODES_FACT]: facts[CODES_FACT] } : {}
+      } catch (err) {
+        console.warn(`  MUR ${e.href}: ${(err as Error).message}`)
       }
     }
     return JSON.stringify({ fetchedAt: new Date().toISOString(), lists, details } satisfies Raw)
@@ -139,9 +199,10 @@ export const murAdapter: SourceAdapter = {
     const out = new Map<string, Draft>()
     for (const list of LISTS) {
       for (const e of entries(lists[list.key] ?? "")) {
-        const code = codeOf(e)
-        if (!code || out.has(e.href)) continue
-        out.set(e.href, toDraft(e, list, code, details[e.href] ?? null))
+        if (out.has(e.href)) continue
+        const facts = details[e.href] ?? null
+        const codes = codesOf(e, facts)
+        if (codes.length) out.set(e.href, toDraft(e, list, codes, facts))
       }
     }
     return [...out.values()]
@@ -154,32 +215,69 @@ const italianDay = (s: string | null | undefined) => {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : null
 }
 
-/** "scade il 19/10/2026 …", "Univ. CHIETI-PESCARA", "Titolo: <a href=…>…</a>", "S.S.D. Economia politica ECON-01/A" */
+/** A search page's result markup, "" when it says there are no open calls, null when it is neither */
+function resultList(html: string): string | null {
+  const start = html.indexOf('id="hiddenresult"')
+  if (start >= 0) return html.slice(start, html.indexOf('id="Pagination"', start))
+  return html.includes("Non sono presenti bandi") ? "" : null
+}
+
+/**
+ * "scade il 19/10/2026 …", "Univ. CHIETI-PESCARA", "Titolo: <a href=…>…</a>", then a code line per post
+ * ("S.S.D. Economia politica ECON-01/A"): a call for several posts lists each one's
+ */
 function entries(html: string): Entry[] {
   const out: Entry[] = []
   for (const m of html.matchAll(/<p>\s*<em[^>]*>([\s\S]*?)<\/em>([\s\S]*?)<\/p>/g)) {
     const link = m[2].match(/<a href="([^"]+)">([\s\S]*?)<\/a>/)
     if (!link) continue
+    const codes = [...m[2].slice(m[2].indexOf("</a>")).matchAll(/<strong>([\s\S]*?)<\/strong>/g)].map((s) => text(s[1]))
     out.push({
       href: link[1],
       title: text(link[2]),
       university: text(m[2].match(/<strong>([\s\S]*?)<\/strong>/)?.[1]),
-      codes: text(m[2].slice(m[2].indexOf("</a>")).match(/<strong>([\s\S]*?)<\/strong>/)?.[1]),
+      codes: codes.filter(Boolean).join("; "),
       deadline: italianDay(m[1]),
     })
   }
   return out
 }
 
-/** The listed code a call names, in its code line or (failing that) its title */
-const codeOf = (e: Entry) => CODES.find((c) => c.re.test(e.codes)) ?? (e.codes ? undefined : CODES.find((c) => c.re.test(e.title)))
+/**
+ * The listed codes a call names: in its list line (one per post), failing that in its title, failing that
+ * on its detail page, as groups or sectors, and as whole areas (13, 14) when it names no more than a few.
+ * A page can name groups for one curriculum and a whole area for another: an area counts for a discipline
+ * that no group already covers.
+ */
+function codesOf(e: Entry, facts?: Facts | null): Code[] {
+  const named = (s: string | undefined) => (s ? CODES.filter((c) => c.re.test(s)) : [])
+  if (e.codes) return named(e.codes)
+  const inTitle = named(e.title)
+  if (inTitle.length) return inTitle
+  const detail = facts?.[CODES_FACT]
+  if (!detail) return []
+  const listed = named(detail)
+  const lines = detail.split("; ")
+  // A whole university's round, open to (nearly) every area, is in none of ours in particular
+  if (lines.filter((l) => /^\d{2} - /.test(l)).length > MAX_AREAS) return listed
+  const areas = Object.values(AREAS).filter(
+    (a) => !listed.some((c) => c.discipline === a.discipline) && lines.some((l) => a.re.test(l)),
+  )
+  return [...listed, ...areas]
+}
 
-function detailFacts(html: string): Record<string, string> | null {
-  const facts: Record<string, string> = {}
+/** The call's own facts, and the codes it names ("13/ECON-01 - ECONOMIA POLITICA; 13 - Scienze economiche…") */
+export function detailFacts(html: string): Facts | null {
+  const facts: Facts = {}
+  const codes: string[] = []
   for (const m of html.matchAll(/<th[^>]*>([\s\S]*?)<\/th>\s*<td[^>]*>([\s\S]*?)<\/td>/g)) {
     const key = text(m[1])
-    if (DETAIL_KEYS.includes(key) && !(key in facts)) facts[key] = text(m[2])
+    const value = text(m[2])
+    if (CODE_ROWS.test(key)) {
+      if (value && value !== "-" && !codes.includes(value)) codes.push(value)
+    } else if (DETAIL_KEYS.includes(key) && !(key in facts)) facts[key] = value
   }
+  if (codes.length) facts[CODES_FACT] = codes.join("; ")
   return Object.keys(facts).length ? facts : null
 }
 
@@ -209,8 +307,15 @@ function sameBody(a: string, b: string) {
 const BOILERPLATE =
   /concorso|competition|selezione|selection|procedura|procedure|bando|call for|reclutamento|recruitment|\b\d{2}\/[A-Z]{4}-\d{2}\b|^\d+\s|\bart\.|\bRT[TD]\b|tenure.track|permanent position/i
 
-function toDraft(e: Entry, list: (typeof LISTS)[number], code: (typeof CODES)[number], facts: Record<string, string> | null): Draft {
+function toDraft(e: Entry, list: (typeof LISTS)[number], codes: Code[], facts: Facts | null): Draft {
   const f = facts ?? {}
+  // A call open to several of our codes (a PhD round, a call for several posts) is named by discipline, and
+  // carries each code's discipline and field
+  const code = codes[0]
+  const disciplines = [...new Set(codes.map((c) => c.discipline))]
+  const subject =
+    codes.length === 1 ? code.name : disciplines.map((d, i) => (i ? DISCIPLINE_NAMES[d].toLowerCase() : DISCIPLINE_NAMES[d])).join(" and ")
+  const named = e.codes || f[CODES_FACT] || ""
   const project = f["Titolo del progetto di ricerca in inglese"] || f["Titolo del progetto di ricerca in italiano"] || e.title
   const role =
     list.key === "profcalls"
@@ -221,17 +326,17 @@ function toDraft(e: Entry, list: (typeof LISTS)[number], code: (typeof CODES)[nu
           : "Professor"
       : list.role
   // "Economia Politica" for an ECON-01 call says nothing the code doesn't
-  const restates = project.toLowerCase() === code.name.toLowerCase() || e.codes.toLowerCase().includes(project.toLowerCase())
+  const restates = project.toLowerCase() === subject.toLowerCase() || named.toLowerCase().includes(project.toLowerCase())
   const substantive = project.length >= 8 && !restates && !BOILERPLATE.test(project)
   const short = project.length <= 110
-  const title = `${role} in ${code.name}${substantive && short ? `: ${tidyName(project)}` : ""}`
+  const title = `${role} in ${subject}${substantive && short ? `: ${tidyName(project)}` : ""}`
 
   const blocks: Block[] = []
   const add = (t: Block["t"], s: string | undefined) => s && blocks.push({ t, text: s })
   if (substantive && !short) add("p", tidyName(project))
   add("p", f["Descrizione sintetica in inglese"] || f["Descrizione sintetica in italiano"])
   add("p", f["Descrizione del bando in inglese"] || f["Descrizione del bando in italiano"])
-  add("p", `Disciplinary code: ${e.codes || code.name}.`)
+  add("p", `Disciplinary code${named.includes("; ") ? "s" : ""}: ${named || subject}.`)
 
   // Fellowship pages name the funder, which is the host unless it's someone else (the European Commission…)
   const org = f["Organizzazione/Ente"] || f["Nome dell'Ente finanziatore"]
@@ -239,7 +344,7 @@ function toDraft(e: Entry, list: (typeof LISTS)[number], code: (typeof CODES)[nu
   const institution = hosted ? tidyName(org) : portalName(e.university)
   const department = f["Facoltà/Dipartimento/Laboratorio di ricerca"]
   const fields = [
-    ...new Set([...(code.field ? [code.field] : []), ...fieldsFromText(title).filter((x) => x !== "any")]),
+    ...new Set([...codes.flatMap((c) => (c.field ? [c.field] : [])), ...fieldsFromText(title).filter((x) => x !== "any")]),
   ]
   const italy = findCountry("IT")
   return {
@@ -252,10 +357,11 @@ function toDraft(e: Entry, list: (typeof LISTS)[number], code: (typeof CODES)[nu
     institution,
     department: department ? tidyName(department) : null,
     category: list.category,
-    disciplines: [code.discipline],
+    disciplines,
     positionTypes: [role],
     fields: fields.length ? fields : ["any"],
-    city: hosted ? tidyPlace(f["Città"]) : null,
+    // A host on two campuses gives both ("Bergamo - Dalmine"): the first is the one a geocoder can find
+    city: hosted ? tidyPlace(f["Città"]?.split(/\s+-\s+/)[0]) : null,
     admin: null,
     country: italy?.name ?? "Italy",
     countryCode: "IT",
@@ -268,7 +374,7 @@ function toDraft(e: Entry, list: (typeof LISTS)[number], code: (typeof CODES)[nu
     logoUrl: null,
     detail: {
       blocks,
-      keywords: [e.codes, f["Sottocampo della ricerca"]].filter((k): k is string => !!k),
+      keywords: [named, f["Sottocampo della ricerca"]].filter((k): k is string => !!k),
       salary: null,
       requirements: [],
       jel: [],
