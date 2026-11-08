@@ -118,9 +118,17 @@ export function useCamera({ map, padding }: MapContext) {
     easeTo,
     fitPoints,
     reveal,
+    // Zooms about the middle of the unobstructed map, so what you were looking at stays put. The map's own center
+    // lies behind the panels, since no move leaves their footprint on the map (see `offset`).
     zoomBy: (delta: number) => {
       const mm = m()
-      mm?.easeTo({ zoom: mm.getZoom() + delta, duration: ms(300) }, eventData({ byUser: true }))
+      if (!mm) return
+      const { clientWidth: w, clientHeight: h } = mm.getContainer()
+      const [dx, dy] = offset()
+      mm.easeTo(
+        { zoom: mm.getZoom() + delta, around: mm.unproject([w / 2 + dx, h / 2 + dy]), duration: ms(300) },
+        eventData({ byUser: true }),
+      )
     },
     reset: () => fitBounds(WORLD_BOUNDS, 3),
     getZoom: () => m()?.getZoom() ?? 0,
