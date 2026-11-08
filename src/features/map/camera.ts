@@ -46,6 +46,14 @@ export function useCamera({ map, padding }: MapContext) {
     return { left: p.left * sx, right: p.right * sx, top: p.top * sy, bottom: p.bottom * sy }
   }
   const ms = (d: number) => (reduce.value ? 0 : d)
+  // Moves to a point shift it into the middle of the unobstructed map with an offset, not `padding`: MapLibre keeps
+  // the padding of an easeTo or flyTo as the map's own, and fitBounds adds the map's own padding to the padding it
+  // is given. A stored footprint would count the panels twice, so a region fit after opening a listing ran out of
+  // room and fell back to the whole world, or landed off-center.
+  const offset = (): [number, number] => {
+    const p = safe()
+    return [(p.left - p.right) / 2, (p.top - p.bottom) / 2]
+  }
 
   const fitBounds = (b: Bounds, maxZoom = 10, o?: MoveOpts) =>
     m()?.fitBounds(
@@ -63,7 +71,7 @@ export function useCamera({ map, padding }: MapContext) {
       {
         center: [lng, lat],
         zoom: zoom ?? Math.max(mm.getZoom(), 10),
-        padding: safe(),
+        offset: offset(),
         duration: ms(1400),
         curve: 1.5,
         essential: true,
@@ -75,7 +83,7 @@ export function useCamera({ map, padding }: MapContext) {
   const easeTo = (lng: number, lat: number, zoom?: number, o?: MoveOpts) => {
     const mm = m()
     mm?.easeTo(
-      { center: [lng, lat], zoom: zoom ?? mm.getZoom(), padding: safe(), duration: ms(700), essential: true },
+      { center: [lng, lat], zoom: zoom ?? mm.getZoom(), offset: offset(), duration: ms(700), essential: true },
       eventData(o),
     )
   }
