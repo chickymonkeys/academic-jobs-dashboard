@@ -67,38 +67,38 @@ export const jobsAcUkAdapter: SourceAdapter = {
   homepage: `${BASE}/jobs/economics`,
   rawExt: "json",
 
-  async fetchRaw(previous) {
+  /**
+   * Now and then a search page comes back without its results (no job count): it is retried, and a facet
+   * that still fails is carried over from the previous payload rather than taking the other one down with it.
+   */
+  async fetchRaw(previous, degraded) {
     const get = politeClient(1500)
+    const prior = previous ? (JSON.parse(previous) as Raw) : null
     const cards = new Map<string, string>()
     const disciplines: Record<string, Discipline[]> = {}
+    const add = (code: string, card: string, discipline: Discipline) => {
+      cards.set(code, card)
+      const tags = (disciplines[code] ??= [])
+      if (!tags.includes(discipline)) tags.push(discipline)
+    }
+    const failed: string[] = []
     for (const [facet, discipline] of Object.entries(FACETS)) {
-      let total = Infinity
-      for (let page = 0; page * PER_PAGE < total && page < MAX_PAGES; page++) {
-        const html = await get(search(facet, page * PER_PAGE + 1))
-        const count = html.match(/class="job-count">\s*(\d+)/)?.[1]
-        if (count == null) throw new Error(`jobs.ac.uk ${facet} page ${page}: job count not found`)
-        total = Number(count)
-        // Each card runs up to its save-job toggle; slicing there keeps the page footer out of the last one
-        const found = html
-          .split('<div class="j-search-result__result')
-          .slice(1)
-          .map((c) => {
-            const end = c.indexOf("j-search-result__save-job")
-            return end < 0 ? c : c.slice(0, end)
-          })
-        if (!found.length) break
-        for (const card of found) {
+      try {
+        for (const [code, card] of await searchFacet(get, facet)) add(code, card, discipline)
+      } catch (e) {
+        failed.push(`${facet}: ${(e as Error).message}`)
+        // The facet's cards as the previous run found them (payloads from before the politics search: economics)
+        for (const card of prior?.cards ?? []) {
           const code = codeOf(card)
-          if (!code) continue
-          cards.set(code, card)
-          const tags = (disciplines[code] ??= [])
-          if (!tags.includes(discipline)) tags.push(discipline)
+          if (code && (prior?.disciplines?.[code] ?? ["econ"]).includes(discipline)) add(code, card, discipline)
         }
       }
     }
+    if (failed.length === Object.keys(FACETS).length) throw new Error(failed[0])
     if (!cards.size) throw new Error("jobs.ac.uk: no job cards found")
+    if (failed.length) degraded(`${failed.length} of ${Object.keys(FACETS).length} discipline searches (${failed.join("; ")})`)
 
-    const before: Raw["postings"] = previous ? ((JSON.parse(previous) as Raw).postings ?? {}) : {}
+    const before: Raw["postings"] = prior?.postings ?? {}
     const postings: Raw["postings"] = {}
     let budget = POSTING_BUDGET
     for (const [code, card] of cards) {
@@ -124,6 +124,34 @@ export const jobsAcUkAdapter: SourceAdapter = {
       .map((card) => toDraft(card, postings, disciplines, fetchedAt))
       .filter((d): d is Draft => d != null)
   },
+}
+
+const JOB_COUNT = /class="job-count">\s*(\d+)/
+
+/** Every card a facet's search lists, by job code: all of them or (by throwing) none */
+async function searchFacet(get: ReturnType<typeof politeClient>, facet: string): Promise<Map<string, string>> {
+  const cards = new Map<string, string>()
+  let total = Infinity
+  for (let page = 0; page * PER_PAGE < total && page < MAX_PAGES; page++) {
+    const html = await get(search(facet, page * PER_PAGE + 1), {
+      check: (body) => (JOB_COUNT.test(body) ? null : `page ${page}: job count not found`),
+    })
+    total = Number(html.match(JOB_COUNT)![1])
+    // Each card runs up to its save-job toggle; slicing there keeps the page footer out of the last one
+    const found = html
+      .split('<div class="j-search-result__result')
+      .slice(1)
+      .map((c) => {
+        const end = c.indexOf("j-search-result__save-job")
+        return end < 0 ? c : c.slice(0, end)
+      })
+    if (!found.length) break
+    for (const card of found) {
+      const code = codeOf(card)
+      if (code) cards.set(code, card)
+    }
+  }
+  return cards
 }
 
 function jobPosting(html: string): JobPosting | null {

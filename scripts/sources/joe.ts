@@ -1,8 +1,9 @@
 import { XMLParser } from "fast-xml-parser"
 import { findCountry } from "../../src/domain/geo"
 import { classifyCategory, fieldsFromJel } from "../../src/domain/taxonomy"
+import { politeClient } from "../lib/http"
 import { clean, extractRequirements, summarize, textToBlocks, tidyPlace } from "../lib/text"
-import { USER_AGENT, type Draft, type SourceAdapter } from "./types"
+import type { Draft, SourceAdapter } from "./types"
 
 const BASE = "https://www.aeaweb.org/joe"
 
@@ -34,16 +35,16 @@ export const joeAdapter: SourceAdapter = {
   rawExt: "xml",
 
   async fetchRaw() {
+    const get = politeClient(1000)
     // The listings page embeds the export link for the current set of active listings.
-    const page = await fetch(`${BASE}/listings`, { headers: { "User-Agent": USER_AGENT } })
-    if (!page.ok) throw new Error(`JOE listings HTTP ${page.status}`)
-    const q = (await page.text()).match(/resultset_output\.php\?mode=full_xml&(?:amp;)?q=([^"&]+)/)?.[1]
-    if (!q) throw new Error("JOE export link not found on listings page")
-    const res = await fetch(`${BASE}/resultset_output.php?mode=full_xml&q=${q}`, {
-      headers: { "User-Agent": USER_AGENT },
+    const exportQuery = (html: string) => html.match(/resultset_output\.php\?mode=full_xml&(?:amp;)?q=([^"&]+)/)?.[1]
+    const page = await get(`${BASE}/listings`, {
+      check: (html) => (exportQuery(html) ? null : "export link not found on the listings page"),
     })
-    if (!res.ok) throw new Error(`JOE export HTTP ${res.status}`)
-    return res.text()
+    return get(`${BASE}/resultset_output.php?mode=full_xml&q=${exportQuery(page)}`, {
+      accept: "application/xml, text/xml, */*",
+      check: (xml) => (xml.includes("<JOE_EXPORT") ? null : "not a JOE export"),
+    })
   },
 
   parse(raw) {

@@ -12,11 +12,12 @@
  *   public/data/details/<id>.json     heavy per-listing bodies, fetched on demand
  */
 import { createHash } from "node:crypto"
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { findCountry, regionForPoint } from "../src/domain/geo"
 import { disciplinesFor } from "../src/domain/taxonomy"
-import { MetaSchema, SnapshotSchema, VacancySchema, type SourceStatus, type Vacancy } from "../src/domain/vacancy"
+import { MetaSchema, SnapshotSchema, VacancySchema, type Vacancy } from "../src/domain/vacancy"
+import { collect } from "./lib/collect"
 import { resolveDeadline } from "./lib/deadline"
 import { cleanPlace, Geocoder } from "./lib/geocode"
 import { jaccard, normName, titleTokens } from "./lib/text"
@@ -64,51 +65,6 @@ async function readJson<T>(file: string, fallback: T): Promise<T> {
     return JSON.parse(await readFile(file, "utf8")) as T
   } catch {
     return fallback
-  }
-}
-
-async function collect(adapter: SourceAdapter): Promise<{ drafts: Draft[]; status: SourceStatus }> {
-  const rawFile = path.join(RAW, `${adapter.id}.${adapter.rawExt}`)
-  const status: SourceStatus = {
-    id: adapter.id,
-    name: adapter.name,
-    homepage: adapter.homepage,
-    ok: false,
-    count: 0,
-    fetchedAt: null,
-    error: null,
-  }
-  let cached: { raw: string; mtime: Date } | null = null
-  try {
-    cached = { raw: await readFile(rawFile, "utf8"), mtime: (await stat(rawFile)).mtime }
-  } catch {
-    /* first run for this source */
-  }
-  const ageHours = cached ? (Date.now() - cached.mtime.getTime()) / 3_600_000 : Infinity
-  let raw: string | null = null
-  if (!OFFLINE && ageHours < (adapter.refreshHours ?? 0)) {
-    console.log(`· ${adapter.id}: cached payload is ${ageHours.toFixed(1)} h old, refreshes every ${adapter.refreshHours} h`)
-  } else if (!OFFLINE) {
-    try {
-      raw = await adapter.fetchRaw(cached?.raw ?? null)
-      status.fetchedAt = new Date().toISOString()
-      await writeFile(rawFile, raw)
-    } catch (e) {
-      status.error = (e as Error).message
-      console.warn(`✗ ${adapter.id}: ${status.error} — trying cached payload`)
-    }
-  }
-  if (raw == null) {
-    if (!cached) return { drafts: [], status: { ...status, error: status.error ?? "no cached payload" } }
-    raw = cached.raw
-    status.fetchedAt = cached.mtime.toISOString()
-  }
-  try {
-    const drafts = adapter.parse(raw)
-    console.log(`✓ ${adapter.id}: ${drafts.length} listings`)
-    return { drafts, status: { ...status, ok: !status.error, count: drafts.length } }
-  } catch (e) {
-    return { drafts: [], status: { ...status, error: `parse: ${(e as Error).message}` } }
   }
 }
 
@@ -161,7 +117,7 @@ async function main() {
       console.log(`· ${adapter.id}: off (${adapter.off}); --enable=${adapter.id} reads it`)
       continue
     }
-    results.push(await collect(adapter))
+    results.push(await collect(adapter, { rawDir: RAW, offline: OFFLINE }))
   }
   const drafts = results.flatMap((r) => r.drafts)
   for (const d of drafts) d.disciplines = disciplinesFor(d.disciplines, d)

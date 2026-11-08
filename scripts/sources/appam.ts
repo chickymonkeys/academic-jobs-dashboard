@@ -1,7 +1,8 @@
 import { findCountry } from "../../src/domain/geo"
 import { classifyCategory, fieldsFromText } from "../../src/domain/taxonomy"
+import { politeClient } from "../lib/http"
 import { clean, htmlToBlocks, summarize, tidyPlace } from "../lib/text"
-import { USER_AGENT, type Draft, type SourceAdapter } from "./types"
+import type { Draft, SourceAdapter } from "./types"
 
 /** APPAM Career Connections, the public policy association's job board (an mcjobboard.net site) */
 const BASE = "https://appam.mcjobboard.net"
@@ -37,11 +38,10 @@ export const appamAdapter: SourceAdapter = {
    * board longer than that is read in part.
    */
   async fetchRaw() {
-    const res = await fetch(`${BASE}/jobs`, { headers: { "User-Agent": USER_AGENT } })
-    if (!res.ok) throw new Error(`APPAM HTTP ${res.status}`)
-    const html = await res.text()
-    const state = html.match(/<script id="[^"]*" type="application\/json">([\s\S]*?)<\/script>/)?.[1]
-    if (!state) throw new Error("APPAM: no embedded results")
+    const embedded = (html: string) => html.match(/<script id="[^"]*" type="application\/json">([\s\S]*?)<\/script>/)?.[1]
+    // A single request; the client brings retries, a timeout and the check that the page was rendered in full
+    const html = await politeClient(0)(`${BASE}/jobs`, { check: (page) => (embedded(page) ? null : "no embedded results") })
+    const state = embedded(html)!
     // Angular escapes the JSON as &q; &a; &s; &l; &g;
     const json = state.replace(/&(q|a|s|l|g);/g, (_, c: string) => ({ q: '"', a: "&", s: "'", l: "<", g: ">" })[c]!)
     const data = JSON.parse(json) as Record<string, { items?: AppamJob[]; totalCount?: number }>
