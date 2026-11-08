@@ -120,11 +120,10 @@ const row = "flex min-h-12 cursor-pointer items-center justify-between gap-3 py-
         <div ref="body" class="scrollbar-thin relative min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain border-t border-default px-4 pt-4 pb-6" data-vaul-no-drag>
           <section data-section="deadline" aria-labelledby="fs-deadline">
             <h3 id="fs-deadline" :class="heading">Deadline</h3>
-            <div role="radiogroup" aria-labelledby="fs-deadline" class="flex flex-wrap gap-2">
+            <div role="group" aria-labelledby="fs-deadline" class="flex flex-wrap gap-2">
               <OptionChip
                 v-for="d in DEADLINE_CHOICES"
                 :key="d.value"
-                kind="radio"
                 :active="(search.dl ?? 'any') === d.value"
                 :count="dlCount(d.value)"
                 @click="setDeadline(d.value)"
@@ -143,7 +142,7 @@ const row = "flex min-h-12 cursor-pointer items-center justify-between gap-3 py-
 
           <section data-section="position" aria-labelledby="fs-position">
             <h3 id="fs-position" :class="heading">Position type</h3>
-            <div class="flex flex-wrap gap-2">
+            <div role="group" aria-labelledby="fs-position" class="flex flex-wrap gap-2">
               <OptionChip
                 v-for="o in options.cats.value"
                 :key="o.id"
@@ -159,7 +158,7 @@ const row = "flex min-h-12 cursor-pointer items-center justify-between gap-3 py-
 
           <section data-section="discipline" aria-labelledby="fs-discipline">
             <h3 id="fs-discipline" :class="heading">Discipline</h3>
-            <div class="flex flex-wrap gap-2">
+            <div role="group" aria-labelledby="fs-discipline" class="flex flex-wrap gap-2">
               <OptionChip
                 v-for="o in options.discs.value"
                 :key="o.id"
@@ -199,7 +198,7 @@ const row = "flex min-h-12 cursor-pointer items-center justify-between gap-3 py-
               Field
               <span class="text-xs font-normal text-muted">JEL classification</span>
             </h3>
-            <div class="flex flex-wrap gap-2">
+            <div role="group" aria-labelledby="fs-field" class="flex flex-wrap gap-2">
               <OptionChip
                 v-for="o in fieldOptions"
                 :key="o.id"
@@ -225,7 +224,7 @@ const row = "flex min-h-12 cursor-pointer items-center justify-between gap-3 py-
 
           <section data-section="source" aria-labelledby="fs-source">
             <h3 id="fs-source" :class="heading">Listed on</h3>
-            <div class="flex flex-wrap gap-2">
+            <div role="group" aria-labelledby="fs-source" class="flex flex-wrap gap-2">
               <OptionChip
                 v-for="o in options.sources.value"
                 :key="o.id"

@@ -45,6 +45,9 @@ async function share() {
     toast.add({ title: "Couldn't copy the link", color: "error" })
   }
 }
+// The button says which of the two it does: a touch screen at desktop width (a tablet on its side) shares too
+const shareLabel = canShare ? "Share" : "Copy link"
+const shareIcon = canShare ? "i-lucide-share" : "i-lucide-link-2"
 const iconBtn = "size-9 justify-center"
 </script>
 
@@ -102,8 +105,8 @@ const iconBtn = "size-9 justify-center"
           <UButton color="neutral" variant="ghost" size="sm" icon="i-lucide-crosshair" aria-label="Show on map" :class="iconBtn" @click="emit('showOnMap')" />
         </UTooltip>
         <template v-if="variant === 'panel'">
-          <UTooltip text="Copy link">
-            <UButton color="neutral" variant="ghost" size="sm" icon="i-lucide-link-2" aria-label="Copy link" :class="iconBtn" @click="share" />
+          <UTooltip :text="shareLabel">
+            <UButton color="neutral" variant="ghost" size="sm" :icon="shareIcon" :aria-label="shareLabel" :class="iconBtn" @click="share" />
           </UTooltip>
           <SaveButton :id="v.id" :class="iconBtn" />
         </template>
@@ -256,8 +259,8 @@ const iconBtn = "size-9 justify-center"
         <UButton
           color="neutral"
           variant="outline"
-          :icon="canShare ? 'i-lucide-share' : 'i-lucide-link-2'"
-          :aria-label="canShare ? 'Share' : 'Copy link'"
+          :icon="shareIcon"
+          :aria-label="shareLabel"
           class="size-11 shrink-0 justify-center rounded-xl"
           @click="share"
         />

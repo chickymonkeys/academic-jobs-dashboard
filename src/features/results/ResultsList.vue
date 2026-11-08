@@ -36,13 +36,18 @@ const rowAt = (i: number) => {
   return e?.kind === "row" ? e.row.v : undefined
 }
 
-// The section header above the first visible row stays pinned, so you always know which stretch of the calendar you're in.
-// The extractor runs inside the virtualizer's own bookkeeping, so it notes the pinned header in a plain variable
-// and `activeHeader` reads it back once the visible items are known.
-let pinned = -1
+// The section header above the first visible row stays pinned, so you always know which stretch of the calendar
+// you're in: the last header at or above the top of the view. It is always rendered, however far above it sits.
+function pinnedHeader(startIndex: number) {
+  let pinned = -1
+  for (const i of headerIdx.value) {
+    if (i > startIndex) break
+    pinned = i
+  }
+  return pinned
+}
 const rangeExtractor = (range: Range) => {
-  pinned = -1
-  for (const i of headerIdx.value) if (i <= range.startIndex) pinned = i
+  const pinned = pinnedHeader(range.startIndex)
   const next = new Set([...(pinned >= 0 ? [pinned] : []), ...defaultRangeExtractor(range)])
   return [...next].sort((a, b) => a - b)
 }
@@ -68,9 +73,10 @@ const virtualizer = useVirtualizer(
   })),
 )
 const items = computed(() => virtualizer.value.getVirtualItems())
+// Read after the items, so it sees the range those items were cut from
 const activeHeader = computed(() => {
   void items.value
-  return pinned
+  return pinnedHeader(virtualizer.value.range?.startIndex ?? 0)
 })
 const measure = (el: Element | ComponentPublicInstance | null) => {
   if (el instanceof Element) virtualizer.value.measureElement(el)
@@ -126,11 +132,14 @@ onBeforeUnmount(() => {
   >
     <div role="list" aria-label="Positions" class="relative" :style="{ height: `${virtualizer.getTotalSize()}px` }">
       <template v-for="item in items" :key="String(item.key)">
-        <!-- Section header: the pinned one sits in flow (sticky), the rest scroll past like rows -->
+        <!--
+          Section header, an item of the list like the rows so the list stays well-formed for screen readers. The
+          pinned one sits in flow (sticky), the rest scroll past like rows.
+        -->
         <div
           v-if="headerAt(item.index)"
           :ref="measure"
-          role="presentation"
+          role="listitem"
           :data-index="item.index"
           class="top-0 left-0 z-10 w-full bg-default/95 px-4 backdrop-blur-sm"
           :class="item.index === activeHeader ? 'sticky' : 'absolute'"

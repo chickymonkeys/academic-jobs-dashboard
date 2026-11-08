@@ -3,7 +3,7 @@ import { computed } from "vue"
 import type { DropdownMenuItem } from "@nuxt/ui"
 import type { AppSearch, SetSearch } from "@/app/search"
 import type { Scope, SortKey } from "@/features/filters/filtering"
-import { SORTS, sortById } from "./sorts"
+import { sortById, sortsFor } from "./sorts"
 
 const props = defineProps<{
   count: number
@@ -26,7 +26,7 @@ const sort = computed(() => sortById(props.sortKey))
 const menu = computed<DropdownMenuItem[][]>(() => [
   [
     { type: "label", label: "Sort by" },
-    ...SORTS.map(
+    ...sortsFor(props.hasQuery).map(
       (s): DropdownMenuItem => ({
         label: s.label,
         type: "checkbox",

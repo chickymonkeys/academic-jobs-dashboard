@@ -15,3 +15,10 @@ export const SORTS: ReadonlyArray<{ id: SortKey; label: string; short: string; h
 ]
 
 export const sortById = (id: SortKey) => SORTS.find((s) => s.id === id) ?? SORTS[0]!
+
+/** Best match leads while there's a search (it's the default then) and trails, unavailable, when there isn't */
+export function sortsFor(hasQuery: boolean) {
+  const best = SORTS.filter((s) => s.id === "relevance")
+  const rest = SORTS.filter((s) => s.id !== "relevance")
+  return hasQuery ? [...best, ...rest] : [...rest, ...best]
+}

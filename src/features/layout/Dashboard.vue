@@ -154,20 +154,23 @@ const nearby = computed(() => {
 })
 
 // ── Selection (pushes history once, so Back closes the detail) ─────────────────────────
-function select(id: string | null, opts?: { zoom?: boolean }) {
+/** `step` keeps the run of results being stepped through; any other pick starts a new one from the list as it is */
+function select(id: string | null, opts?: { zoom?: boolean; step?: boolean }) {
   zoomOnSelect = !!opts?.zoom
+  if (id && !opts?.step) takeBrowse()
   set({ sel: id ?? undefined }, { push: !!id && !search.value.sel })
   if (id && !isDesktop.value && isPeek(snap.value)) snap.value = SNAP_HALF
 }
 const selectFromList = (id: string) => select(id, { zoom: true })
 const selectFromMap = (id: string) => select(id)
 // Whatever closes the details (the back button, Esc, the browser's Back), the list then rings the listing you had
-// open. The ring is let go once it has faded, so the row doesn't light up again when it next scrolls into view.
+// open. Only closing does: picking another listing while one is open isn't coming back to the list. The ring is let
+// go once it has faded, so the row doesn't light up again when it next scrolls into view.
 let recentTimer: ReturnType<typeof setTimeout> | undefined
 watch(
   () => search.value.sel,
-  (_next, prev) => {
-    if (!prev) return
+  (next, prev) => {
+    if (next || !prev) return
     recentId.value = prev
     clearTimeout(recentTimer)
     recentTimer = setTimeout(() => (recentId.value = null), 3000)
@@ -175,14 +178,32 @@ watch(
 )
 onBeforeUnmount(() => clearTimeout(recentTimer))
 
-/** Where the open listing sits in the list, for "3 of 48" and stepping to its neighbours */
-const position = computed(() => {
-  const i = selected.value ? rows.value.findIndex((x) => x.v.id === selected.value!.id) : -1
-  return i < 0 ? null : { index: i, total: rows.value.length }
+/**
+ * The results you step through: the list as it stood when you picked a listing, from the list, the map or nearby.
+ * Each step moves the map, and a list that follows the map would reshuffle under you, so the camera never changes
+ * it; filters, data, the sort, a region or a group do.
+ */
+const browse = shallowRef<string[]>([])
+function takeBrowse() {
+  browse.value = rows.value.map((x) => x.v.id)
+}
+// `group` goes in as a getter: a shallow ref among the sources makes Vue run the callback whenever any of them is
+// re-read, changed or not, and the camera rewriting the URL would then retake the list on every map move
+watch([() => !!search.value.sel, filterKey, index, sortKey, region, () => group.value, areaOn], takeBrowse, {
+  immediate: true,
 })
+
+/** Where the open listing sits in what you're browsing, for "3 of 48" and stepping to its neighbours */
+const position = computed(() => {
+  const i = search.value.sel ? browse.value.indexOf(search.value.sel) : -1
+  return i < 0 ? null : { index: i, total: browse.value.length }
+})
+/** Next or previous result (the buttons, j/k, ↑/↓); with nothing open, or one from outside the list, the first */
 function step(by: 1 | -1) {
-  const next = position.value && rows.value[position.value.index + by]
-  if (next) select(next.v.id, { zoom: true })
+  const p = position.value
+  if (!p) takeBrowse()
+  const id = p ? browse.value[p.index + by] : browse.value[0]
+  if (id && id !== search.value.sel) select(id, { zoom: true, step: true })
 }
 
 // Also once the map arrives: it loads on its own, so a shared listing's data can be ready before there's a map to move
@@ -267,12 +288,9 @@ useEventListener(window, "keydown", (e: KeyboardEvent) => {
   }
   const down = e.key === "j" || e.key === "ArrowDown"
   const up = e.key === "k" || e.key === "ArrowUp"
-  const r = rows.value
-  if ((down || up) && r.length) {
+  if ((down || up) && rows.value.length) {
     e.preventDefault()
-    const i = r.findIndex((x) => x.v.id === search.value.sel)
-    const next = down ? Math.min(r.length - 1, i + 1) : Math.max(0, i < 0 ? 0 : i - 1)
-    select(r[next]!.v.id, { zoom: true })
+    step(down ? 1 : -1)
   } else if (e.key === "f") fitResults()
   else if (e.key === "+" || e.key === "=") camera.zoomBy(1)
   else if (e.key === "-") camera.zoomBy(-1)

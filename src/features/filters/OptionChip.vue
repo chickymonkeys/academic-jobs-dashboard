@@ -1,24 +1,16 @@
 <script setup lang="ts">
-withDefaults(
-  defineProps<{
-    active: boolean
-    count?: number
-    color?: string
-    tag?: string
-    /** "radio" for a single choice (one of a group), "toggle" for one of several */
-    kind?: "toggle" | "radio"
-  }>(),
-  { kind: "toggle" },
-)
+defineProps<{ active: boolean; count?: number; color?: string; tag?: string }>()
 </script>
 
-<!-- A finger-sized choice in the filter sheet: the check mark, not only the tint, says it's on -->
+<!--
+  A finger-sized choice in the filter sheet: the check mark, not only the tint, says it's on. A pressed button
+  even where only one can be on (the deadline): each choice is a Tab stop and Space or Enter picks it, as a
+  button does, where a radio would promise arrow keys.
+-->
 <template>
   <button
     type="button"
-    :role="kind === 'radio' ? 'radio' : undefined"
-    :aria-checked="kind === 'radio' ? active : undefined"
-    :aria-pressed="kind === 'toggle' ? active : undefined"
+    :aria-pressed="active"
     class="inline-flex h-10 max-w-full items-center gap-2 rounded-full border px-3.5 text-sm transition-[color,background-color,border-color,transform] duration-150 select-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none active:scale-[0.97]"
     :class="
       active

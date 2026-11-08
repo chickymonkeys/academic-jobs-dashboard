@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AppSearch, SetSearch } from "@/app/search"
 import type { SortKey } from "@/features/filters/filtering"
-import { SORTS } from "./sorts"
+import { sortsFor } from "./sorts"
 
 const props = defineProps<{ sortKey: SortKey; hasQuery: boolean; search: AppSearch; set: SetSearch }>()
 const open = defineModel<boolean>("open", { required: true })
@@ -27,13 +27,12 @@ function pick(id: SortKey) {
     <template #content>
       <div class="px-2 pt-2 pb-[max(env(safe-area-inset-bottom),12px)]">
         <h2 id="sort-title" class="px-3 pt-1 pb-2 text-base font-semibold text-highlighted">Sort by</h2>
-        <div role="radiogroup" aria-labelledby="sort-title">
+        <div role="group" aria-labelledby="sort-title">
           <button
-            v-for="s in SORTS"
+            v-for="s in sortsFor(hasQuery)"
             :key="s.id"
             type="button"
-            role="radio"
-            :aria-checked="sortKey === s.id"
+            :aria-pressed="sortKey === s.id"
             :disabled="s.id === 'relevance' && !hasQuery"
             class="flex min-h-14 w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-elevated active:bg-elevated disabled:opacity-45 disabled:hover:bg-transparent"
             @click="pick(s.id)"
