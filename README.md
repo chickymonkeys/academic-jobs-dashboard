@@ -7,8 +7,6 @@ A map-first dashboard of academic vacancies in economics, with political science
 
 Stack: Vue 3 · TypeScript · Vite · **Nuxt UI** (Tailwind v4, Reka UI) · **MapLibre GL** (CARTO basemaps) · **deck.gl** (interleaved) · **TanStack Query / Virtual** · Vue Router · Zod · **Void** → Cloudflare Workers.
 
-**Personal use only.** None of these boards' terms allow republishing their listings, and AEA JOE and THE forbid automated collection without written permission (see [Terms of use](#terms-of-use)). The deployment is a personal tool at an unlisted workers.dev address, and the snapshot is never committed or published. Don't link or share the address or the snapshot without the boards' written permission.
-
 Needs Node 24 and pnpm (`corepack enable` picks up the version pinned in `package.json`).
 
 ```bash
@@ -131,39 +129,15 @@ UI is Nuxt UI in plain Vue mode (`@nuxt/ui/vite`): components (`UButton`, `UPopo
 
 **Scaling headroom:** deck.gl and Supercluster handle 10⁵ points. The list and table are virtualized. Search uses a per-snapshot precomputed index. Past roughly 50k listings, move `applyFilters` into a Web Worker and split the index by region, or serve it from an API with the same shapes.
 
-## Terms of use
-
-What each board's terms say about reuse, as read on 2026-11-08 (not legal advice):
-
-| Source | What its terms say |
-|---|---|
-| AEA JOE | On the listings page that offers the XML export: "The information contained on the site is for personal use only. … You may not scrape, collect, … reproduce, display, … distribute … without the express written permission of the American Economic Association." Contact: joe@aeaweb.org |
-| EconJobMarket | Publishing or making available "any information retrieved from the Site" needs prior written authorization; employers keep copyright in their ads; the public feed serves partner sites (Econometric Society, EEA, CEA). Contact: econjobmarket.org/contact |
-| HigherEdJobs | Reportedly forbids republishing, reproducing or distributing any of the site's information; the terms page refuses automated readers, so this is unverified |
-| jobs.ac.uk | Copying for your own personal use only; reproducing any part of the site needs permission (help@jobs.ac.uk) |
-| THE | Forbids data mining, robots, spiders and scraping tools, and sharing content with third parties without prior written consent |
-| MUR | No terms or licence found; `robots.txt` allows everything |
-| APPAM | Reproduction, distribution or republication needs prior written permission (appam.org's terms; unclear whether they cover the job board) |
-| AJO | No terms, only "All Rights Reserved"; `robots.txt` asks for a 5 s crawl delay |
-| AcademicTransfer | The published terms are a privacy statement only; `robots.txt` allows job pages at a 10 s crawl delay |
-
-Beyond the boards' terms: under the EU database right, copying and indexing a job board's database and letting people search it on another site is "extraction" and "re-utilisation", which the board can stop when it puts its investment at risk (CJEU C-762/19, *CV-Online Latvia v Melons*). And about 38% of postings carry a named contact's email address, which publishing would make personal data the site's owner is responsible for under the GDPR. A deployment used only by its owner republishes neither.
-
 ## Hosting (Cloudflare, provisioned by Void)
 
-[Void](https://void.cloud) builds the app and deploys it to Cloudflare Workers, creating the Worker on the first run. A free Cloudflare account is enough.
+[Void](https://void.cloud) builds the app and deploys it to Cloudflare Workers, creating the Worker on the first run. A free Cloudflare account is enough; the only dashboard step is choosing a workers.dev subdomain.
 
 1. **Create a free account** at [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) and verify the email.
 2. **Choose a workers.dev subdomain:** open **Workers & Pages** in the dashboard once and pick a name, say `econ-atlas`. Void can't deploy to an account without one.
 3. **First deploy, from your machine:** `pnpm ingest`, then `pnpm run deploy:cloudflare`. The browser opens to sign in to Cloudflare. Void builds the app, creates a Worker named after `package.json`'s `name`, uploads `dist/client` (app + `data/`) to Workers Static Assets, and prints the URL: `https://academic-jobs-dashboard.<subdomain>.workers.dev`. Later runs update the same Worker. A deploy from your machine ships your local snapshot, until CI replaces it at its next run.
-4. **Make it private with Cloudflare Access (optional).** The workers.dev URL is public but unlisted; to require a login instead:
-   1. Turn on Zero Trust once: open **Zero Trust** in the dashboard, choose a team name and the **Free** plan. It asks for payment details but doesn't charge.
-   2. Open **Workers & Pages → academic-jobs-dashboard → Access → Protect this Worker behind Access**, choose **All traffic** (the workers.dev URL and every preview URL), pick the **Cloudflare account** policy (members of your Cloudflare account, so only you if you're its only member) and select **Apply Access**.
-   3. Optional: to allow one email address instead, edit the application under **Zero Trust → Access → Applications** and give its Allow policy an **Emails** rule.
-
-   Access checks every request before the Worker runs; anyone else gets a login page. It stays in place across deploys.
-5. **Commit `void.lock.json`** if the deploy changed it. It records your account ID and the resources Void provisioned, so other machines and CI deploy to the same place.
-6. **Deploy from GitHub Actions (optional):** in the dashboard, go to **My Profile → API Tokens → Create Token** and use the **Edit Cloudflare Workers** template, limited to your account. Then store it, with your subdomain, in the repository:
+4. **Commit `void.lock.json`** if the deploy changed it. It records your account ID and the resources Void provisioned, so other machines and CI deploy to the same place.
+5. **Deploy from GitHub Actions (optional):** in the dashboard, go to **My Profile → API Tokens → Create Token** and use the **Edit Cloudflare Workers** template, limited to your account. Then store it, with your subdomain, in the repository:
 
    ```bash
    gh secret set CLOUDFLARE_API_TOKEN                          # paste the token when prompted
@@ -172,7 +146,7 @@ Beyond the boards' terms: under the EU database right, copying and indexing a jo
    ```
 
    From then on, `.github/workflows/deploy.yml` fetches fresh listings and deploys on every push to `main` and every 3 hours. Without the token, it still runs the pipeline, but only builds and type-checks.
-7. **Protect `main` (optional):** the repository's "Protect main" ruleset takes changes only through pull requests reviewed by the code owner (`.github/CODEOWNERS`) and blocks force pushes and deletion. Admins can merge their own pull requests by bypassing the review, but can't push directly. The workflow token can't bypass a ruleset on a personal account's repository, so CI pushes its state with a deploy key, the one actor the ruleset lets through:
+6. **Protect `main` (optional):** the repository's "Protect main" ruleset takes changes only through pull requests reviewed by the code owner (`.github/CODEOWNERS`) and blocks force pushes and deletion. Admins can merge their own pull requests by bypassing the review, but can't push directly. The workflow token can't bypass a ruleset on a personal account's repository, so CI pushes its state with a deploy key, the one actor the ruleset lets through:
 
    ```bash
    ssh-keygen -t ed25519 -N "" -C "CI: ingest state" -f ingest_state
@@ -182,7 +156,7 @@ Beyond the boards' terms: under the EU database right, copying and indexing a jo
 
    Then create the ruleset under **Settings → Rules → Rulesets**: target the default branch, add **Repository admin** (for pull requests only) and **Deploy keys** (always) to the bypass list, and turn on **Restrict deletions**, **Block force pushes** and **Require a pull request before merging** with one approval and code owner review.
 
-**What the free plan covers:** Void's static deploy routes every request through the Worker (`run_worker_first: true`), so each file a visit loads (about 15, plus a `meta.json` poll every 2 minutes while the tab is open) counts toward the 100,000 requests a day of Workers Free, after which requests fail until midnight UTC. That is plenty for one person and would not survive public traffic, one more reason to keep it unlisted. The other limit to watch is 20,000 files per deploy on Free; each listing adds one `data/details/*.json`, and there are about 1,500 today.
+**What the free plan covers:** the app is a static SPA on Workers Static Assets. The edge serves it, along with the snapshot under `/data/`, without running Worker code, and asset requests are free and unmetered. The Worker only answers Void's own `/__void` endpoints, well inside the 100,000 requests a day of Workers Free. One limit to watch is 20,000 files per deploy on Free; each listing adds one `data/details/*.json`, and there are about 1,300 today.
 
 **Growing a backend:** put API routes in `routes/`, scheduled jobs in `crons/`, a Drizzle schema in `db/`, then drop `inference` from `void.config.ts`. Void infers the D1, KV and R2 bindings from the code and provisions them on the next deploy. One caveat if the ingest moves into a cron: parsing the feeds takes well over 10 ms of CPU, more than Workers Free allows per invocation (10 ms), so that needs Workers Paid.
 
