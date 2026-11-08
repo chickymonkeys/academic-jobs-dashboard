@@ -5,7 +5,9 @@
 
 A map-first dashboard of academic vacancies in economics, with political science and public policy alongside, aggregated live from **EconJobMarket (EJM)**, the **AEA's Job Openings for Economists (JOE)**, **jobs.ac.uk**, **Times Higher Education (THE)**, the **Italian ministry's calls portal (MUR)**, **APPAM Career Connections**, **Academic Jobs Online (AJO)**, **AcademicTransfer** and **HigherEdJobs (HEJ)**.
 
-Stack: Vue 3 · TypeScript · Vite · **Nuxt UI** (Tailwind v4, Reka UI) · **MapLibre GL** (CARTO basemaps) · **deck.gl** (interleaved) · **TanStack Query / Virtual** · Vue Router · Zod · **Void** (dev server and build) → **GitHub Pages**, live at [pizzigolot.to/academic-jobs-dashboard](https://pizzigolot.to/academic-jobs-dashboard/).
+Stack: Vue 3 · TypeScript · Vite · **Nuxt UI** (Tailwind v4, Reka UI) · **MapLibre GL** (CARTO basemaps) · **deck.gl** (interleaved) · **TanStack Query / Virtual** · Vue Router · Zod · **Void** → Cloudflare Workers, private behind Cloudflare Access.
+
+**Personal use only.** None of these boards' terms allow republishing their listings, and AEA JOE and THE forbid automated collection without written permission (see [Terms of use](#terms-of-use)). The deployment is therefore private, behind Cloudflare Access, and the snapshot is never committed or published. Don't make the Worker public or share the snapshot without the boards' written permission.
 
 Needs Node 24 and pnpm (`corepack enable` picks up the version pinned in `package.json`).
 
@@ -14,9 +16,9 @@ git clone https://github.com/chickymonkeys/academic-jobs-dashboard.git
 cd academic-jobs-dashboard
 pnpm install
 pnpm ingest                  # fetch every source → geocode → dedupe → public/data/ (gitignored)
-pnpm dev                     # http://localhost:5173/academic-jobs-dashboard/, on Cloudflare's local Workers runtime
+pnpm dev                     # http://localhost:5173, on Cloudflare's local Workers runtime
 pnpm build && pnpm preview   # production build (vite build, then vue-tsc)
-gh workflow run deploy       # fetch, build and publish to GitHub Pages (see Hosting)
+pnpm run deploy:cloudflare   # build and deploy to your Cloudflare account
 ```
 
 `pnpm ingest --offline` re-parses cached payloads in `data/raw/`; `--geocode-budget=N` caps Nominatim calls per run; `--enable=euraxess` also reads a source that is off by default (below).
@@ -111,13 +113,13 @@ src/app/                       router (one view) + URL search state (Zod-validat
 src/data/                      TanStack Query: poll meta → versioned snapshot → lazy details
 src/features/                  map · search · filters · results · detail · layout (Vue SFCs)
 src/components/job/            listing atoms: deadline, avatar, save star, source tags
-vite.config.ts                 base path (/academic-jobs-dashboard/) + voidPlugin() + Vue + Nuxt UI (theme colors, bundled Lucide icons)
-void.config.ts                 Void's view of the app: a static SPA built into dist/client
+vite.config.ts                 voidPlugin() + Vue + Nuxt UI (theme colors, bundled Lucide icons)
+void.config.ts                 how Void deploys the app (static SPA today)
 ```
 
 UI is Nuxt UI in plain Vue mode (`@nuxt/ui/vite`): components (`UButton`, `UPopover`, `UCommandPalette`, `UTable`, `UDrawer`…) and `useToast` are auto-imported, and the palette lives in `src/assets/main.css` as Nuxt UI tokens (`--ui-primary`, `--ui-bg`, `--ui-text-*`…) tuned to the atlas colors. The map is MapLibre driven directly from `JobMap.vue`, with deck.gl as an interleaved overlay.
 
-**Data contract** (served from `data/` beside the app, under the base path; any static host or CDN works, set `VITE_DATA_URL` to point elsewhere):
+**Data contract** (any static host or CDN works; set `VITE_DATA_URL` to point elsewhere):
 
 - `meta.json`: a few hundred bytes, polled every 2 min. Its `version` (a content hash) keys the snapshot query, so clients only re-download when something actually changed, then announce "N new positions just posted".
 - `vacancies.json`: the lean index used by the map and list (around 1.1 MB raw for about 1,300 positions).
@@ -125,17 +127,52 @@ UI is Nuxt UI in plain Vue mode (`@nuxt/ui/vite`): components (`UButton`, `UPopo
 
 **Adding a source** (e.g. university feeds): implement `SourceAdapter`, map it onto `Vacancy` (including the `disciplines` its feed or category implies), add its id to `SOURCE_IDS` and its labels to `src/components/job/labels.ts`, then register it in `scripts/ingest.ts`. Order sets dedupe priority, so sources with full descriptions come first. `fetchRaw(previous, degraded)` receives the last cached payload, so per-job pages fetched before can be reused and a part of the source that fails (one list of several) can be carried over from it, reported through `degraded`; give `get` a `check` so an error page served as 200 is retried instead of parsed; `refreshHours` spaces out live fetches for portals that ask for it; `off` keeps a source out of every run unless `--enable=<id>` names it. Category, discipline and field normalization live in `src/domain/taxonomy.ts` (JEL letters as the shared field vocabulary; `fieldsFromText` infers them from titles where a source has no field codes; `disciplinesFor` adds the disciplines a title or department names).
 
-**Continuous updates:** `.github/workflows/deploy.yml` runs the pipeline on every push to `main` and every 3 hours, then publishes to GitHub Pages. The snapshot is never committed: it holds third-party listings, many with named contacts, so it lives only in the deployed site. Raw feed payloads stay in the Actions cache, so a feed that is down falls back to its last good copy (see "When a source stops answering" above). `data/geocache.json` and `data/seen.json` are committed state: the geocode cache keeps reruns fast and polite to Nominatim, and first-seen dates give JOE (which publishes no post date) a "new" signal.
+**Continuous updates:** `.github/workflows/deploy.yml` runs the pipeline on every push to `main` and every 3 hours, then deploys. The snapshot is never committed: it holds third-party listings, many with named contacts, so it lives only in the deployed site. Raw feed payloads stay in the Actions cache, so a feed that is down falls back to its last good copy (see "When a source stops answering" above). `data/geocache.json` and `data/seen.json` are committed state: the geocode cache keeps reruns fast and polite to Nominatim, and first-seen dates give JOE (which publishes no post date) a "new" signal.
 
 **Scaling headroom:** deck.gl and Supercluster handle 10⁵ points. The list and table are virtualized. Search uses a per-snapshot precomputed index. Past roughly 50k listings, move `applyFilters` into a Web Worker and split the index by region, or serve it from an API with the same shapes.
 
-## Hosting (GitHub Pages)
+## Terms of use
 
-The site is a GitHub Pages project site, so Pages serves it under the repository's name on the owner's Pages domain. The owner's user site (`chickymonkeys.github.io`) has the custom domain `pizzigolot.to`, so the dashboard lives at [pizzigolot.to/academic-jobs-dashboard/](https://pizzigolot.to/academic-jobs-dashboard/), beside the personal website but deployed on its own: a website deploy never touches the dashboard, and the reverse. Vite's `base` in `vite.config.ts` must match the repository's name; a fork or a rename changes it there.
+What each board's terms say about reuse, as read on 2026-11-08 (not legal advice):
 
-1. **Turn on Pages:** **Settings → Pages → Source: GitHub Actions**, or `gh api -X POST repos/{owner}/{repo}/pages -f build_type=workflow`. No token and no `CNAME` file are needed: the workflow publishes with its own token, and the domain comes from the user site.
-2. **First deploy:** `gh workflow run deploy`. `.github/workflows/deploy.yml` fetches the listings, builds the app with the snapshot under `data/`, uploads `dist/client` as the run's Pages artifact and publishes it; from then on it runs on every push to `main` and every 3 hours. The artifact is kept for a day and holds the same files the site serves; nothing of the snapshot enters the repository. Deploys come only from the workflow: `pnpm ingest` on your machine stays on your machine.
-3. **Protect `main` (optional):** the repository's "Protect main" ruleset takes changes only through pull requests reviewed by the code owner (`.github/CODEOWNERS`) and blocks force pushes and deletion. Admins can merge their own pull requests by bypassing the review, but can't push directly. The workflow token can't bypass a ruleset on a personal account's repository, so CI pushes its state with a deploy key, the one actor the ruleset lets through:
+| Source | What its terms say |
+|---|---|
+| AEA JOE | On the listings page that offers the XML export: "The information contained on the site is for personal use only. … You may not scrape, collect, … reproduce, display, … distribute … without the express written permission of the American Economic Association." Contact: joe@aeaweb.org |
+| EconJobMarket | Publishing or making available "any information retrieved from the Site" needs prior written authorization; employers keep copyright in their ads; the public feed serves partner sites (Econometric Society, EEA, CEA). Contact: econjobmarket.org/contact |
+| HigherEdJobs | Reportedly forbids republishing, reproducing or distributing any of the site's information; the terms page refuses automated readers, so this is unverified |
+| jobs.ac.uk | Copying for your own personal use only; reproducing any part of the site needs permission (help@jobs.ac.uk) |
+| THE | Forbids data mining, robots, spiders and scraping tools, and sharing content with third parties without prior written consent |
+| MUR | No terms or licence found; `robots.txt` allows everything |
+| APPAM | Reproduction, distribution or republication needs prior written permission (appam.org's terms; unclear whether they cover the job board) |
+| AJO | No terms, only "All Rights Reserved"; `robots.txt` asks for a 5 s crawl delay |
+| AcademicTransfer | The published terms are a privacy statement only; `robots.txt` allows job pages at a 10 s crawl delay |
+
+Beyond the boards' terms: under the EU database right, copying and indexing a job board's database and letting people search it on another site is "extraction" and "re-utilisation", which the board can stop when it puts its investment at risk (CJEU C-762/19, *CV-Online Latvia v Melons*). And about 38% of postings carry a named contact's email address, which publishing would make personal data the site's owner is responsible for under the GDPR. A private deployment used only by its owner republishes neither.
+
+## Hosting (private, on Cloudflare)
+
+[Void](https://void.cloud) builds the app and deploys it to Cloudflare Workers, creating the Worker on the first run; Cloudflare Access keeps it private. A free Cloudflare account is enough.
+
+1. **Create a free account** at [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) and verify the email.
+2. **Choose a workers.dev subdomain:** open **Workers & Pages** in the dashboard once and pick a name, say `econ-atlas`. Void can't deploy to an account without one.
+3. **First deploy, from your machine:** `pnpm ingest`, then `pnpm run deploy:cloudflare`. The browser opens to sign in to Cloudflare. Void builds the app, creates a Worker named after `package.json`'s `name`, uploads `dist/client` (app + `data/`) to Workers Static Assets, and prints the URL: `https://academic-jobs-dashboard.<subdomain>.workers.dev`. Later runs update the same Worker. A deploy from your machine ships your local snapshot, until CI replaces it at its next run.
+4. **Make it private with Cloudflare Access.** The workers.dev URL is public until this is done, so do it right after the first deploy:
+   1. Turn on Zero Trust once: open **Zero Trust** in the dashboard, choose a team name and the **Free** plan. It asks for payment details but doesn't charge.
+   2. Open **Workers & Pages → academic-jobs-dashboard → Access → Protect this Worker behind Access**, choose **All traffic** (the workers.dev URL and every preview URL), pick the **Cloudflare account** policy (members of your Cloudflare account, so only you if you're its only member) and select **Apply Access**.
+   3. Optional: to allow one email address instead, edit the application under **Zero Trust → Access → Applications** and give its Allow policy an **Emails** rule.
+
+   Access checks every request before the Worker runs; anyone else gets a login page. It stays in place across deploys.
+5. **Commit `void.lock.json`** if the deploy changed it. It records your account ID and the resources Void provisioned, so other machines and CI deploy to the same place.
+6. **Deploy from GitHub Actions (optional):** in the dashboard, go to **My Profile → API Tokens → Create Token** and use the **Edit Cloudflare Workers** template, limited to your account. Then store it, with your subdomain, in the repository:
+
+   ```bash
+   gh secret set CLOUDFLARE_API_TOKEN                          # paste the token when prompted
+   gh variable set CLOUDFLARE_WORKERS_SUBDOMAIN --body econ-atlas
+   gh workflow run deploy                                      # first CI deploy
+   ```
+
+   From then on, `.github/workflows/deploy.yml` fetches fresh listings and deploys on every push to `main` and every 3 hours. Without the token, it still runs the pipeline, but only builds and type-checks.
+7. **Protect `main` (optional):** the repository's "Protect main" ruleset takes changes only through pull requests reviewed by the code owner (`.github/CODEOWNERS`) and blocks force pushes and deletion. Admins can merge their own pull requests by bypassing the review, but can't push directly. The workflow token can't bypass a ruleset on a personal account's repository, so CI pushes its state with a deploy key, the one actor the ruleset lets through:
 
    ```bash
    ssh-keygen -t ed25519 -N "" -C "CI: ingest state" -f ingest_state
@@ -145,11 +182,9 @@ The site is a GitHub Pages project site, so Pages serves it under the repository
 
    Then create the ruleset under **Settings → Rules → Rulesets**: target the default branch, add **Repository admin** (for pull requests only) and **Deploy keys** (always) to the bypass list, and turn on **Restrict deletions**, **Block force pushes** and **Require a pull request before merging** with one approval and code owner review.
 
-**What Pages allows:** no limit on requests, a published site of up to 1 GB (the build is about 11 MB, snapshot included) and a soft bandwidth limit of 100 GB a month: about 100,000 first visits, at roughly 1 MB each gzipped (fonts and map tiles come from Google and CARTO). Pages sends `Cache-Control: max-age=600` on every file and takes no custom headers; the client fetches `meta.json` with `cache: "no-cache"`, so open tabs still see a new snapshot within one poll of a deploy. Pages has no single-page-app fallback either, so the workflow copies `index.html` to `404.html`: a stray path under the site opens the map.
+**What the free plan covers:** Void's static deploy routes every request through the Worker (`run_worker_first: true`), so each file a visit loads (about 15, plus a `meta.json` poll every 2 minutes while the tab is open) counts toward the 100,000 requests a day of Workers Free, after which requests fail until midnight UTC. That is plenty for one person and would not survive public traffic, one more reason to keep it private. The other limit to watch is 20,000 files per deploy on Free; each listing adds one `data/details/*.json`, and there are about 1,500 today.
 
-**Why not Cloudflare Workers:** the site used to be deployed there with `void deploy`. Void's static deploy routes every request through the Worker (`run_worker_first: true`), so on Workers Free each file a visit loads (about 15, plus a `meta.json` poll every 2 minutes) counts toward the 100,000 requests a day, after which requests fail until midnight UTC. Serving it at a path of `pizzigolot.to` would also have meant moving the domain's DNS to Cloudflare.
-
-**Growing a backend:** Pages serves static files only. API routes, scheduled jobs or a database mean a Worker again: put API routes in `routes/`, scheduled jobs in `crons/`, a Drizzle schema in `db/`, drop `inference` from `void.config.ts` and deploy with `pnpm exec void deploy --platform cloudflare`; Void infers the D1, KV and R2 bindings from the code and provisions them. One caveat if the ingest moves into a cron: parsing the feeds takes well over 10 ms of CPU, more than Workers Free allows per invocation (10 ms), so that needs Workers Paid.
+**Growing a backend:** put API routes in `routes/`, scheduled jobs in `crons/`, a Drizzle schema in `db/`, then drop `inference` from `void.config.ts`. Void infers the D1, KV and R2 bindings from the code and provisions them on the next deploy. One caveat if the ingest moves into a cron: parsing the feeds takes well over 10 ms of CPU, more than Workers Free allows per invocation (10 ms), so that needs Workers Paid.
 
 ## Notes
 
