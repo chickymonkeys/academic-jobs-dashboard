@@ -4,9 +4,11 @@ import { MetaSchema, SnapshotSchema, VacancyDetailSchema } from "@/domain/vacanc
 
 /**
  * Data contract: a tiny `meta.json` (polled) + a versioned `vacancies.json` index + lazy per-listing details.
- * Point VITE_DATA_URL at any static host / CDN / API that serves the same shapes.
+ * Served beside the app (under Vite's `base`) by default; point VITE_DATA_URL at any static host / CDN / API that
+ * serves the same shapes.
  */
-const BASE = (import.meta.env.VITE_DATA_URL as string | undefined)?.replace(/\/$/, "") ?? "/data"
+const BASE =
+  (import.meta.env.VITE_DATA_URL as string | undefined)?.replace(/\/$/, "") ?? `${import.meta.env.BASE_URL}data`
 
 async function getJson(url: string) {
   const res = await fetch(url, { cache: "no-cache" })

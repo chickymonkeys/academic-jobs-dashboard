@@ -5,6 +5,9 @@ import ui from "@nuxt/ui/vite"
 import { voidPlugin } from "void"
 
 export default defineConfig({
+  // GitHub Pages serves a project site under the repository's name (pizzigolot.to/academic-jobs-dashboard/).
+  // Assets, the router and the data URL all follow this, so a renamed repository or another host changes it here.
+  base: "/academic-jobs-dashboard/",
   plugins: [
     voidPlugin(),
     vue(),
