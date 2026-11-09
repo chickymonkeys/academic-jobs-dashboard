@@ -12,6 +12,7 @@ const props = defineProps<{
   search: AppSearch
   set: SetSearch
   facets: FacetCounts
+  /** What the list would hold with the Saved or New switch on, every other filter applied, like each facet's counts */
   savedCount: number
   freshCount: number
   /** Sources the snapshot was built from; one the ingest leaves off has nothing to filter, unless it's selected */
@@ -49,7 +50,7 @@ const clearAll = () => props.set(NO_FILTERS)
       Filters
       <span
         v-if="anyActive"
-        class="-mr-1 inline-flex size-[18px] items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-inverted tabular-nums"
+        class="-mr-1 inline-flex size-[18px] items-center justify-center rounded-full bg-default text-[10px] font-semibold text-primary tabular-nums"
         aria-hidden="true"
       >
         {{ activeCount }}
@@ -61,16 +62,24 @@ const clearAll = () => props.set(NO_FILTERS)
     <Chip
       :active="!!search.fresh"
       :aria-pressed="!!search.fresh"
+      :title="search.fresh ? 'Showing only positions posted in the last 7 days: click to show all' : 'Show only positions posted in the last 7 days'"
       @click="set({ fresh: search.fresh ? undefined : true })"
     >
       <UIcon name="i-lucide-sparkles" class="size-3.5" aria-hidden="true" />
       New
       <span v-if="freshCount > 0" class="tabular-nums opacity-70">{{ freshCount }}</span>
+      <UIcon v-if="search.fresh" name="i-lucide-x" class="-mr-1 size-3.5" aria-hidden="true" />
     </Chip>
-    <Chip :active="!!search.saved" :aria-pressed="!!search.saved" @click="set({ saved: search.saved ? undefined : true })">
+    <Chip
+      :active="!!search.saved"
+      :aria-pressed="!!search.saved"
+      :title="search.saved ? 'Showing only saved positions: click to show all' : 'Show only saved positions'"
+      @click="set({ saved: search.saved ? undefined : true })"
+    >
       <UIcon name="i-lucide-star" class="size-3.5" :class="search.saved && '*:fill-current'" aria-hidden="true" />
       Saved
       <span v-if="savedCount > 0" class="tabular-nums opacity-70">{{ savedCount }}</span>
+      <UIcon v-if="search.saved" name="i-lucide-x" class="-mr-1 size-3.5" aria-hidden="true" />
     </Chip>
     <FacetChip label="Field" :options="fieldOptions" :selected="fields" sheet @open="emit('open', 'field')" />
     <FacetChip label="Source" :options="sourceOptions" :selected="sources" sheet @open="emit('open', 'source')" />
@@ -103,17 +112,24 @@ const clearAll = () => props.set(NO_FILTERS)
     <Chip
       :active="!!search.fresh"
       :aria-pressed="!!search.fresh"
-      title="Posted in the last 7 days"
+      :title="search.fresh ? 'Showing only positions posted in the last 7 days: click to show all' : 'Show only positions posted in the last 7 days'"
       @click="set({ fresh: search.fresh ? undefined : true })"
     >
-      <UIcon name="i-lucide-sparkles" class="size-3.5" />
+      <UIcon name="i-lucide-sparkles" class="size-3.5" aria-hidden="true" />
       New
       <span v-if="freshCount > 0" class="tabular-nums opacity-70">{{ freshCount }}</span>
+      <UIcon v-if="search.fresh" name="i-lucide-x" class="-mr-1 size-3.5" aria-hidden="true" />
     </Chip>
-    <Chip :active="!!search.saved" :aria-pressed="!!search.saved" @click="set({ saved: search.saved ? undefined : true })">
-      <UIcon name="i-lucide-star" class="size-3.5" :class="search.saved && '*:fill-current'" />
+    <Chip
+      :active="!!search.saved"
+      :aria-pressed="!!search.saved"
+      :title="search.saved ? 'Showing only saved positions: click to show all' : 'Show only saved positions'"
+      @click="set({ saved: search.saved ? undefined : true })"
+    >
+      <UIcon name="i-lucide-star" class="size-3.5" :class="search.saved && '*:fill-current'" aria-hidden="true" />
       Saved
       <span v-if="savedCount > 0" class="tabular-nums opacity-70">{{ savedCount }}</span>
+      <UIcon v-if="search.saved" name="i-lucide-x" class="-mr-1 size-3.5" aria-hidden="true" />
     </Chip>
     <FacetChip
       label="Source"

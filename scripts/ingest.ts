@@ -72,8 +72,11 @@ function daysBetween(a: string, b: string) {
   return Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000
 }
 
-/** Cross-source dedupe: same institution and discipline + (near-identical title, or similar title and same deadline) */
-function dedupe(drafts: Draft[]): Draft[] {
+/**
+ * Cross-source dedupe: same institution and discipline + (near-identical title, or similar title and same deadline).
+ * Each listing folded into another is reported to `merged`, with the one it went into.
+ */
+function dedupe(drafts: Draft[], merged: Array<[dup: Draft, primary: Draft]> = []): Draft[] {
   const byInstitution = new Map<string, Draft[]>()
   const out: Draft[] = []
   for (const d of drafts) {
@@ -89,11 +92,14 @@ function dedupe(drafts: Draft[]): Draft[] {
       return sim >= 0.8 || (sim >= 0.4 && sameDeadline)
     })
     if (match) {
+      merged.push([d, match])
       match.alsoOn.push({ source: d.source, url: d.url })
       // A listing that states no deadline (HigherEdJobs gives none) takes the one its twin states
       if (!match.deadline && !match.rolling && (d.deadline || d.rolling)) {
         Object.assign(match, { deadline: d.deadline, deadlineKind: d.deadlineKind, closesAt: d.closesAt, rolling: d.rolling })
       }
+      // The post went up when the first board to state a date says it did (JOE states none, so its twin's date counts)
+      if (d.postedAt && (!match.postedAt || d.postedAt < match.postedAt)) match.postedAt = d.postedAt
       match.fields = [...new Set([...match.fields.filter((f) => f !== "any"), ...d.fields.filter((f) => f !== "any")])]
       if (!match.fields.length) match.fields = ["any"]
       match.disciplines = disciplinesFor([...match.disciplines, ...d.disciplines], match)
@@ -163,8 +169,20 @@ async function main() {
   await geocoder.save()
   console.log("geocoder", geocoder.stats)
 
-  const unique = dedupe(located)
+  const merged: Array<[Draft, Draft]> = []
+  const unique = dedupe(located, merged)
   console.log(`dedupe: ${located.length} → ${unique.length}`)
+
+  // A post listed on several boards was first seen when any of them first showed it. Every copy keeps that date,
+  // so the copy folded into its twin isn't taken for a new post the day the twin comes down (a JOE listing showed
+  // as posted today, months after its EJM twin went up).
+  const twins = new Map<Draft, Draft[]>()
+  for (const [dup, primary] of merged) twins.set(primary, [...(twins.get(primary) ?? []), dup])
+  for (const [primary, dups] of twins) {
+    const copies = [primary, ...dups]
+    const first = copies.map((d) => seen.ids[d.id]).filter((x): x is string => !!x).sort()[0] ?? today
+    for (const d of copies) seen.ids[d.id] = first
+  }
 
   const items: Vacancy[] = unique.map((d) => {
     const firstSeenAt = (seen.ids[d.id] ??= today)

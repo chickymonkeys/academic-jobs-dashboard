@@ -78,7 +78,7 @@ export function score(x: Indexed, terms: string[]) {
   return s
 }
 
-type FacetKey = "cats" | "discs" | "fields" | "sources" | "dl"
+type FacetKey = "cats" | "discs" | "fields" | "sources" | "dl" | "fresh" | "saved"
 
 /** Which deadline bucket a listing falls in, for the Deadline filter and its counts */
 export function deadlineBucket(v: Vacancy, now = new Date()): "week" | "month" | "later" | "none" {
@@ -95,8 +95,8 @@ function passes(x: Indexed, f: Filters, saved: ReadonlySet<string>, skip?: Facet
   if (skip !== "fields" && f.fields.length && !v.fields.some((fl) => f.fields.includes(fl))) return false
   if (skip !== "sources" && f.sources.length && ![v.source, ...v.alsoOn.map((a) => a.source)].some((s) => f.sources.includes(s)))
     return false
-  if (f.savedOnly && !saved.has(v.id)) return false
-  if (f.freshOnly && !isFresh(v, now)) return false
+  if (skip !== "saved" && f.savedOnly && !saved.has(v.id)) return false
+  if (skip !== "fresh" && f.freshOnly && !isFresh(v, now)) return false
   if (!f.includeClosed && deadlineState(v, now) === "closed") return false
   if (skip === "dl" || f.deadline === "any") return true
   // The date that matters today: a full-consideration date, or the later close once that has passed
@@ -130,15 +130,25 @@ export function facetCounts(index: Indexed[], f: Filters, saved: ReadonlySet<str
     month: (buckets.week ?? 0) + (buckets.month ?? 0),
     none: buckets.none ?? 0,
   }
+  // The New and Saved switches count like every other choice: what the list would hold with the switch on
   return {
     cats: count("cats", (v) => [v.category]),
     discs: count("discs", (v) => v.disciplines),
     fields: count("fields", (v) => v.fields),
     sources: count("sources", (v) => [v.source, ...v.alsoOn.map((a) => a.source)]),
     dls,
+    fresh: count("fresh", (v) => (isFresh(v, now) ? ["yes"] : [])).yes ?? 0,
+    saved: count("saved", (v) => (saved.has(v.id) ? ["yes"] : [])).yes ?? 0,
   }
 }
 export type FacetCounts = ReturnType<typeof facetCounts>
+
+/** Listings with no search or filter at all (closed ones only when they're included), what the filters are taken from */
+export function unfilteredCount(index: Indexed[], includeClosed: boolean) {
+  if (includeClosed) return index.length
+  const now = new Date()
+  return index.reduce((n, x) => n + Number(deadlineState(x.v, now) !== "closed"), 0)
+}
 
 export function inBounds(v: Vacancy, b: Bounds | null) {
   return !b || boundsContain(b, v.lng, v.lat)

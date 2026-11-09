@@ -13,6 +13,7 @@ import {
   haversine,
   inBounds,
   sortResults,
+  unfilteredCount,
   type Scope,
   type SortKey,
 } from "@/features/filters/filtering"
@@ -28,7 +29,7 @@ import ResultsHeader from "@/features/results/ResultsHeader.vue"
 import ResultsList from "@/features/results/ResultsList.vue"
 import SortSheet from "@/features/results/SortSheet.vue"
 import SearchBox from "@/features/search/SearchBox.vue"
-import { deadlineState, isFresh } from "@/lib/dates"
+import { deadlineState } from "@/lib/dates"
 import { useIsDesktop, useIsWide } from "@/lib/media"
 import { useShortlist } from "@/lib/shortlist"
 import { useMode } from "@/lib/theme"
@@ -37,7 +38,7 @@ import DataStatus from "./DataStatus.vue"
 import EmptyResults from "./EmptyResults.vue"
 import LoadError from "./LoadError.vue"
 import MobileSheet from "./MobileSheet.vue"
-import { isPeek, SHEET_W, SNAP_HALF, sheetOffset, usePeekSnap, type Snap } from "./sheet"
+import { isPeek, PEEK_FILTER_NOTE_PX, SHEET_W, SNAP_HALF, sheetOffset, usePeekSnap, type Snap } from "./sheet"
 
 // The map engine (deck.gl + MapLibre, the bigger half of the JS) and the desktop-only table load on their own,
 // so the search, filters and list are up and usable while they stream in
@@ -55,13 +56,17 @@ const mode = useMode()
 const saved = useShortlist()
 const [search, set] = useAppSearch()
 const { items, byId, meta, version, isLoading, error, isRefreshing } = useVacancies(() =>
-  set({ fresh: true, sort: "newest" }),
+  // Brings them to the top of the list; it doesn't switch on the New filter, which would then stay on and hide
+  // every older listing long after the toast is gone
+  set({ sort: "newest" }),
 )
 
 const bounds = shallowRef<Bounds | null>(null)
 const hoveredId = ref<string | null>(null)
 const group = shallowRef<{ ids: string[]; label: string } | null>(null)
-const peek = usePeekSnap()
+// Room in the peeking sheet for the header's "Filters hide …" line, set once the filters are known (below)
+const peekExtra = ref(0)
+const peek = usePeekSnap(peekExtra)
 const snap = ref<Snap>(search.value.sel ? SNAP_HALF : peek.value)
 const topBar = useTemplateRef<HTMLElement>("topBar")
 const initialCamera = parseCamera(search.value.at)
@@ -139,7 +144,13 @@ const rows = computed(() => {
   else if (!reg && areaOn.value && bounds.value) r = r.filter((x) => inBounds(x.v, bounds.value))
   return sortResults(r, sortKey.value, filters.value.terms)
 })
-const freshCount = computed(() => items.value.filter((v) => isFresh(v)).length)
+// What the search and filters choose from, so the header can say how much of it they hide
+const allCount = computed(() => unfilteredCount(index.value, !!search.value.closed))
+watch(
+  () => !selected.value && allCount.value > matched.value.length,
+  (shown) => (peekExtra.value = shown ? PEEK_FILTER_NOTE_PX : 0),
+  { immediate: true },
+)
 const crossListed = computed(() => items.value.filter((v) => v.alsoOn.length > 0).length)
 
 const nearby = computed(() => {
@@ -369,8 +380,8 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
             :set="set"
             :facets="facets"
             :source-ids="snapshotSources"
-            :saved-count="saved.size"
-            :fresh-count="freshCount"
+            :saved-count="facets.saved"
+            :fresh-count="facets.fresh"
             class="flex-wrap"
           />
         </div>
@@ -378,6 +389,7 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
         <ResultsHeader
           :count="rows.length"
           :total="matched.length"
+          :all="allCount"
           :scope="scope"
           :group-label="group?.label"
           :region-label="regionLabel"
@@ -388,6 +400,7 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
           :show-view-toggle="true"
           @clear-group="group = null"
           @world="goRegion('world')"
+          @clear-filters="clearSearchAndFilters"
         />
         <LoadError v-if="error && !items.length" :message="errorMessage" />
         <ResultsTable
@@ -488,8 +501,8 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
               :set="set"
               :facets="facets"
               :source-ids="snapshotSources"
-              :saved-count="saved.size"
-              :fresh-count="freshCount"
+              :saved-count="facets.saved"
+              :fresh-count="facets.fresh"
               sheet
               class="px-0.5 [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)]"
               @open="openFilters"
@@ -525,6 +538,7 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
           <ResultsHeader
             :count="rows.length"
             :total="matched.length"
+            :all="allCount"
             :scope="scope"
             :group-label="group?.label"
             :region-label="regionLabel"
@@ -536,6 +550,7 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
             sheet
             @clear-group="group = null"
             @world="goRegion('world')"
+            @clear-filters="clearSearchAndFilters"
             @sort="sortOpen = true"
           />
           <RegionNav
@@ -572,8 +587,8 @@ const rightInset = computed(() => (selected.value ? DETAIL_W + GAP * 2 : GAP))
         :set="set"
         :facets="facets"
         :source-ids="snapshotSources"
-        :saved-count="saved.size"
-        :fresh-count="freshCount"
+        :saved-count="facets.saved"
+        :fresh-count="facets.fresh"
         :result-count="rows.length"
         @done="onFiltersDone"
       />
