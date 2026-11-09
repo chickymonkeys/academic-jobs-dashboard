@@ -31,9 +31,11 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}
     steps:
-      # Git runs with the deploy key, which may push to the protected main; without the secret, the workflow token
+      # Git runs with the deploy key, which may push to the protected main; without the secret, with the workflow
+      # token. The run starts from the branch's tip, not the commit that triggered it: a run queued behind another
+      # then starts from the state that run saved, so ingest, state and build all come from the same commit.
       - uses: actions/checkout@v6
-        with: { ssh-key: "${{ secrets.INGEST_DEPLOY_KEY }}" }
+        with: { ref: "${{ github.ref }}", ssh-key: "${{ secrets.INGEST_DEPLOY_KEY }}" }
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with: { node-version: 24, cache: pnpm }
@@ -57,8 +59,13 @@ jobs:
           # [skip ci]: unlike the workflow token's, a deploy key's push would start this workflow again
           if ! git diff --cached --quiet; then
             git commit -m "data: update ingest state $(date -u +%FT%TZ) [skip ci]"
-            git pull --rebase
-            git push
+            # Should the state still change on main mid-run (seen.json is one line, so any two changes collide),
+            # main's copy stands and the site deploys anyway: the next run records the listings this one saw first,
+            # a few hours later.
+            if ! { git pull --rebase && git push; }; then
+              git rebase --abort 2>/dev/null || true
+              echo "::warning::Pipeline state changed on main during this run; deployed without saving this run's state."
+            fi
           fi
       # `void deploy` runs `pnpm run build` (vite build, then vue-tsc), so a type error stops the deploy
       - name: Deploy
